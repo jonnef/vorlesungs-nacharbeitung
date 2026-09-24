@@ -9,6 +9,7 @@ Ordnerstruktur (iCloud Drive/Dokumente/Studium):
       Skripte/          ← PDFs des Dozenten (werden auf den Pi hochgeladen)
       Transkripte/      ← legt der Watcher an (JSON mit Zeitstempeln)
       Notizen/          ← legt der Watcher an (fertige Markdown-Notizen)
+      Glossar.md        ← legt der Watcher an (wächst mit jeder Vorlesung)
 
 Konfiguration über Umgebungsvariablen (setzt install.sh im LaunchAgent):
     VORLESUNG_SERVER   z. B. http://raspberrypi.local:8000
@@ -155,6 +156,22 @@ def write_notes(module_dir: Path, video: Path, info: dict) -> None:
     log.info("Notizen gespeichert: %s/Notizen/%s.md", module_dir.name, video.stem)
 
 
+def sync_glossary(module: str, module_dir: Path) -> None:
+    """Legt Studium/<Modul>/Glossar.md an bzw. aktualisiert sie, wenn sich Einträge geändert haben."""
+    info = api("GET", f"/api/modules/{quote(module)}/glossary")
+    if not info.get("count"):
+        return
+    target = module_dir / "Glossar.md"
+
+    def content(text: str) -> str:  # Datumszeile ignorieren, sonst würde täglich neu geschrieben
+        return "\n".join(line for line in text.splitlines() if not line.startswith("_Stand "))
+
+    if target.exists() and content(target.read_text()) == content(info["markdown"]):
+        return
+    target.write_text(info["markdown"])
+    log.info("Glossar aktualisiert: %s/Glossar.md (%d Einträge)", module, info["count"])
+
+
 # ---------- Hauptschleife ----------
 
 def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool:
@@ -220,6 +237,7 @@ def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool
         state["lectures"][key] = {"lecture_id": res["lecture_id"], "status": "sent"}
         save_state(state)
         log.info("%s an den Pi geschickt (Vorlesung #%s)", video.name, res["lecture_id"])
+    sync_glossary(module, module_dir)
     return transcribed
 
 

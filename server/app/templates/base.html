@@ -53,6 +53,16 @@
   .notes .math.block { margin:.8em 0; overflow-x:auto; overflow-y:hidden; }
   .notes .ts { font-family:ui-monospace, monospace; font-size:13px; color:var(--accent); white-space:nowrap; }
   .notes .page { font-size:13px; color:var(--ok); white-space:nowrap; }
+  .glossary-tools { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .glossary-tools input[type=search] { flex:1 1 220px; font:inherit; padding:6px 10px; border-radius:8px;
+          border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  .filters { display:flex; flex-wrap:wrap; gap:6px; }
+  button.filter.active { background:var(--accent); color:#fff; }
+  .glossary .letter { margin:1.4em 0 .3em; }
+  .glossary .entry { margin:10px 0; }
+  .glossary .entry p { margin:.4em 0; }
+  .entry-head .kind { font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:99px; padding:1px 8px; margin-left:4px; }
+  .sources { font-size:14px; margin-top:6px; display:flex; flex-direction:column; gap:2px; }
   details summary { cursor:pointer; }
   .transcript { font-size:14px; max-height:480px; overflow-y:auto; }
   .transcript .ts { font-family:ui-monospace, monospace; color:var(--muted); margin-right:6px; }

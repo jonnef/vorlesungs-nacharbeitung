@@ -6,6 +6,7 @@ import secrets
 import tempfile
 import threading
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -18,6 +19,7 @@ from markdown_it import MarkdownIt
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from pydantic import BaseModel
 
+from . import glossary
 from .config import settings
 from .db import Database
 from .prompt import PAGE_RE, TS_RE
@@ -30,12 +32,14 @@ log = logging.getLogger("vorlesung")
 service = Service(settings, Database(settings.db_path))
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals["fmt_ts"] = fmt_ts
+templates.env.globals["initial"] = glossary.initial
 
 
 def _worker(stop: threading.Event) -> None:
     while not stop.wait(settings.poll_interval_sec):
         try:
             service.poll_jobs()
+            service.ensure_glossary_jobs()
         except Exception:
             log.exception("Fehler im Hintergrund-Worker")
 
@@ -129,6 +133,19 @@ def render_notes(notes: str) -> str:
     return PAGE_RE.sub(r'<span class="page">[\1 S. \2]</span>', html)
 
 
+def render_inline(text: str) -> str:
+    """Einzeilige Markdown-Texte (Glossar-Definitionen) inkl. $…$-Formeln."""
+    return MARKDOWN.renderInline(text)
+
+
+templates.env.filters["inline_md"] = render_inline
+
+
+def _glossary_markdown(module: dict) -> str:
+    groups = service.module_glossary(module["id"])
+    return glossary.to_markdown(module["name"], groups, datetime.now().strftime("%d.%m.%Y"))
+
+
 def _budget() -> dict:
     return {
         "budget": settings.monthly_budget_usd,
@@ -179,6 +196,18 @@ def api_lecture(lecture_id: int):
     }
 
 
+@app.get("/api/modules/{module_name}/glossary", dependencies=[Depends(api_auth)])
+def api_glossary(module_name: str):
+    with service.db.connect() as conn:
+        row = conn.execute("SELECT * FROM modules WHERE name = ?", (module_name,)).fetchone()
+    if not row:
+        return {"count": 0, "markdown": ""}
+    groups = service.module_glossary(row["id"])
+    if not groups:
+        return {"count": 0, "markdown": ""}
+    return {"count": len(groups), "markdown": _glossary_markdown(dict(row))}
+
+
 # ---------- Weboberfläche ----------
 
 @app.get("/", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
@@ -209,7 +238,25 @@ def module_page(request: Request, module_id: int):
     for lec in lectures:
         lec["job"] = service.latest_job(lec["id"])
     return templates.TemplateResponse(request, "module.html", {
-        "module": module, "scripts": scripts, "lectures": lectures, "b": _budget()})
+        "module": module, "scripts": scripts, "lectures": lectures, "b": _budget(),
+        "glossary_count": len(service.module_glossary(module_id)),
+        "glossary_status": service.glossary_status(module_id)})
+
+
+@app.get("/modules/{module_id}/glossar", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def glossary_page(request: Request, module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    return templates.TemplateResponse(request, "glossary.html", {
+        "module": module, "groups": service.module_glossary(module_id),
+        "status": service.glossary_status(module_id), "b": _budget()})
+
+
+@app.get("/modules/{module_id}/glossar.md", response_class=PlainTextResponse, dependencies=[Depends(web_auth)])
+def glossary_md(module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    filename = quote(f"Glossar {module['name']}.md")
+    return PlainTextResponse(_glossary_markdown(module), media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
 
 
 @app.post("/modules/{module_id}/scripts", dependencies=[Depends(web_auth)])
@@ -276,7 +323,7 @@ def poll_now(back: str = Form("/")):
 @app.get("/kosten", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
 def usage_page(request: Request):
     rows = _all(
-        "SELECT u.*, l.title, l.id AS lecture_id FROM usage_log u"
+        "SELECT u.*, l.title, l.id AS lecture_id, j.kind FROM usage_log u"
         " LEFT JOIN jobs j ON j.id = u.job_id LEFT JOIN lectures l ON l.id = j.lecture_id"
         " ORDER BY u.id DESC LIMIT 200"
     )

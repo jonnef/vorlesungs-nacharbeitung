@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import pricing
+from . import glossary, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -138,7 +138,8 @@ class Service:
     def latest_job(self, lecture_id: int) -> dict | None:
         with self.db.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM jobs WHERE lecture_id = ? ORDER BY id DESC LIMIT 1", (lecture_id,)
+                "SELECT * FROM jobs WHERE lecture_id = ? AND kind = 'notes' ORDER BY id DESC LIMIT 1",
+                (lecture_id,),
             ).fetchone()
         return dict(row) if row else None
 
@@ -184,18 +185,23 @@ class Service:
             segments=segments,
             pages=pages,
         )
+        return self._insert_job(lecture_id, "notes", params,
+                                [[p["kuerzel"], p["label"]] for p in pages])
+
+    def _insert_job(self, lecture_id: int, kind: str, params: dict, pages: list,
+                    source_job_id: int | None = None) -> int:
+        """Zählt die Tokens, legt den Job mit Höchstkosten an und startet ihn ggf. automatisch."""
         input_tokens = self._count_tokens(params)
         estimate = pricing.worst_case_usd(params["model"], input_tokens, params["max_tokens"])
         with self.db.connect() as conn:
             job_id = conn.execute(
-                "INSERT INTO jobs (lecture_id, status, model, request_json, pages_json,"
-                " input_tokens_est, cost_est_usd, created_at, updated_at)"
-                " VALUES (?, 'estimated', ?, ?, ?, ?, ?, ?, ?)",
-                (lecture_id, params["model"], json.dumps(params),
-                 json.dumps([[p["kuerzel"], p["label"]] for p in pages]),
-                 input_tokens, estimate, now(), now()),
+                "INSERT INTO jobs (lecture_id, kind, source_job_id, status, model, request_json,"
+                " pages_json, input_tokens_est, cost_est_usd, created_at, updated_at)"
+                " VALUES (?, ?, ?, 'estimated', ?, ?, ?, ?, ?, ?, ?)",
+                (lecture_id, kind, source_job_id, params["model"], json.dumps(params),
+                 json.dumps(pages), input_tokens, estimate, now(), now()),
             ).lastrowid
-        log.info("Job %s: %s Input-Tokens, max. %.3f USD", job_id, input_tokens, estimate)
+        log.info("Job %s (%s): %s Input-Tokens, max. %.3f USD", job_id, kind, input_tokens, estimate)
         if self.settings.auto_submit:
             try:
                 self.submit_job(job_id)
@@ -218,6 +224,87 @@ class Service:
             # Abweichung ist klein (die Kostenschätzung rechnet ohnehin mit dem vollen Deckel).
             log.warning("Token-Zählung mit thinking/effort abgelehnt (%s), zähle ohne.", api_error_text(e))
             return self.client.messages.count_tokens(**base).input_tokens
+
+    # ---------- Glossar ----------
+
+    def ensure_glossary_jobs(self) -> None:
+        """Legt für jede fertige Notiz ohne Glossar einen Glossar-Job an (auch für ältere Vorlesungen).
+
+        Läuft im Hintergrund-Worker. Wird eine Vorlesung neu erstellt, bekommt die neue Fassung
+        ebenfalls einen Glossar-Job, der die alten Einträge dieser Vorlesung ersetzt.
+        """
+        with self.db.connect() as conn:
+            pending = conn.execute(
+                "SELECT n.id, n.lecture_id, n.notes_md, n.pages_json, l.title FROM jobs n"
+                " JOIN lectures l ON l.id = n.lecture_id"
+                " WHERE n.kind = 'notes' AND n.status = 'done' AND n.notes_md IS NOT NULL"
+                " AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = n.lecture_id AND kind = 'notes')"
+                " AND NOT EXISTS (SELECT 1 FROM jobs g WHERE g.kind = 'glossary' AND g.source_job_id = n.id)"
+            ).fetchall()
+            blocked = [r["id"] for r in conn.execute(
+                "SELECT id FROM jobs WHERE kind = 'glossary' AND status = 'blocked'")]
+        for n in pending:
+            params = glossary.build_request(
+                model=self.settings.model, effort=self.settings.glossary_effort,
+                max_tokens=self.settings.glossary_max_tokens, title=n["title"], notes=n["notes_md"],
+            )
+            try:
+                self._insert_job(n["lecture_id"], "glossary", params, json.loads(n["pages_json"]),
+                                 source_job_id=n["id"])
+            except anthropic.APIError as e:
+                log.warning("Glossar-Job für Vorlesung %s nicht angelegt: %s", n["lecture_id"], api_error_text(e))
+                return
+        if self.settings.auto_submit:
+            for job_id in blocked:  # klein und günstig – bei frei gewordenem Budget nachholen
+                try:
+                    self.submit_job(job_id)
+                except (BudgetError, ValueError, anthropic.APIError):
+                    break
+
+    def module_glossary(self, module_id: int) -> list[dict]:
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT g.*, l.title AS lecture_title FROM glossary_entries g"
+                " JOIN lectures l ON l.id = g.lecture_id WHERE g.module_id = ?"
+                " ORDER BY l.source_filename, g.id",
+                (module_id,),
+            ).fetchall()
+        entries = []
+        for r in rows:
+            e = dict(r)
+            e["timestamps"] = json.loads(e.pop("timestamps_json"))
+            e["pages"] = json.loads(e.pop("pages_json"))
+            entries.append(e)
+        return glossary.group_entries(entries)
+
+    def glossary_status(self, module_id: int) -> dict:
+        """Wie viele Vorlesungen im Glossar stecken bzw. noch ausgewertet werden."""
+        with self.db.connect() as conn:
+            done = conn.execute(
+                "SELECT COUNT(DISTINCT lecture_id) AS c FROM glossary_entries WHERE module_id = ?",
+                (module_id,)).fetchone()["c"]
+            running = conn.execute(
+                "SELECT COUNT(*) AS c FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'glossary' AND j.status IN ('estimated', 'blocked', 'submitted')",
+                (module_id,)).fetchone()["c"]
+        return {"lectures": done, "pending": running}
+
+    def _store_glossary(self, job: dict, text: str) -> None:
+        with self.db.connect() as conn:
+            lec = conn.execute("SELECT module_id, duration_sec FROM lectures WHERE id = ?",
+                               (job["lecture_id"],)).fetchone()
+            entries = glossary.parse_entries(text, lec["duration_sec"],
+                                             {tuple(p) for p in json.loads(job["pages_json"])})
+            conn.execute("DELETE FROM glossary_entries WHERE lecture_id = ?", (job["lecture_id"],))
+            conn.executemany(
+                "INSERT INTO glossary_entries (module_id, lecture_id, job_id, term, norm, kind,"
+                " definition, formula, timestamps_json, pages_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(lec["module_id"], job["lecture_id"], job["id"], e["term"], e["norm"], e["kind"],
+                  e["definition"], e["formula"], json.dumps(e["timestamps"]), json.dumps(e["pages"]))
+                 for e in entries],
+            )
+        self._set(job["id"], status="done", error=None)
+        log.info("Glossar-Job %s fertig: %d Einträge", job["id"], len(entries))
 
     def submit_job(self, job_id: int) -> None:
         # Budgetprüfung und Abschicken nicht parallel, sonst könnten zwei Jobs dasselbe Restbudget nutzen.
@@ -288,7 +375,18 @@ class Service:
         if msg.stop_reason == "refusal":
             self._set(job["id"], status="failed", error="Claude hat die Anfrage abgelehnt (refusal).")
             return
-        notes = "".join(b.text for b in msg.content if b.type == "text").strip()
+        text = "".join(b.text for b in msg.content if b.type == "text").strip()
+        if job["kind"] == "glossary":
+            if msg.stop_reason == "max_tokens":
+                self._set(job["id"], status="failed",
+                          error="Glossar beim Token-Deckel abgeschnitten (GLOSSARY_MAX_TOKENS erhöhen).")
+                return
+            try:
+                self._store_glossary(job, text)
+            except (json.JSONDecodeError, AttributeError) as e:
+                self._set(job["id"], status="failed", error=f"Glossar-Antwort nicht lesbar: {e}")
+            return
+        notes = text
         with self.db.connect() as conn:
             duration = conn.execute(
                 "SELECT duration_sec FROM lectures WHERE id = ?", (job["lecture_id"],)
@@ -299,6 +397,7 @@ class Service:
             warnings.insert(0, "Antwort wurde beim Token-Deckel abgeschnitten (MAX_OUTPUT_TOKENS erhöhen).")
         self._set(job["id"], status="done", notes_md=notes, warnings_json=json.dumps(warnings), error=None)
         log.info("Job %s fertig, %.3f USD", job["id"], cost)
+        # Das Glossar dieser Fassung legt der Hintergrund-Worker an (ensure_glossary_jobs).
 
     def _set(self, job_id: int, **fields) -> None:
         fields["updated_at"] = now()

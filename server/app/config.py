@@ -40,6 +40,10 @@ class Settings:
     # Wie viele Tokens an Skriptseiten maximal pro Vorlesung mitgeschickt werden.
     script_context_tokens: int = field(default_factory=lambda: int(_env("SCRIPT_CONTEXT_TOKENS", "60000")))
 
+    # Glossar-Auswertung der fertigen Notizen (klein, daher mittlerer Aufwand reicht).
+    glossary_effort: str = field(default_factory=lambda: _env("GLOSSARY_EFFORT", "medium"))
+    glossary_max_tokens: int = field(default_factory=lambda: int(_env("GLOSSARY_MAX_TOKENS", "10000")))
+
     monthly_budget_usd: float = field(default_factory=lambda: float(_env("MONTHLY_BUDGET_USD", "10")))
     # Jobs automatisch abschicken, wenn sie ins Budget passen (sonst Freigabe per Klick).
     auto_submit: bool = field(default_factory=lambda: _env("AUTO_SUBMIT", "1") == "1")

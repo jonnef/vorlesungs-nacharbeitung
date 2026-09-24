@@ -2,6 +2,9 @@
 {% block title %}{{ module.name }}{% endblock %}
 {% block content %}
 <h1>{{ module.name }}</h1>
+<p><a href="/modules/{{ module.id }}/glossar">Glossar</a>
+  <span class="muted">· {{ glossary_count }} Einträge aus {{ glossary_status.lectures }} Vorlesungen
+  {%- if glossary_status.pending %} · {{ glossary_status.pending }} in Arbeit{% endif %}</span></p>
 
 <h2>Vorlesungen</h2>
 <div class="card">

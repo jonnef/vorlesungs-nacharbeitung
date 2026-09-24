@@ -43,10 +43,13 @@ CREATE TABLE IF NOT EXISTS lectures (
     UNIQUE (module_id, source_filename)
 );
 
+-- kind: notes (Lernnotizen aus dem Transkript) oder glossary (Glossar aus den Notizen)
 -- status: estimated (wartet auf Freigabe), blocked (Budget), submitted, done, failed
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY,
     lecture_id INTEGER NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'notes',
+    source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
     status TEXT NOT NULL,
     model TEXT NOT NULL,
     request_json TEXT NOT NULL,
@@ -59,6 +62,20 @@ CREATE TABLE IF NOT EXISTS jobs (
     error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS glossary_entries (
+    id INTEGER PRIMARY KEY,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    lecture_id INTEGER NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
+    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    term TEXT NOT NULL,
+    norm TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    definition TEXT NOT NULL,
+    formula TEXT NOT NULL,
+    timestamps_json TEXT NOT NULL,
+    pages_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS usage_log (
@@ -85,6 +102,16 @@ class Database:
         path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn) -> None:
+        """Ergänzt Spalten in Datenbanken, die mit einer älteren Version angelegt wurden."""
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+        if "kind" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'notes'")
+        if "source_job_id" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL")
 
     @contextmanager
     def connect(self):

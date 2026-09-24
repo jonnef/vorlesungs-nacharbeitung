@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -28,18 +29,20 @@ class FakeBatches:
 
     def results(self, batch_id):
         idx = int(batch_id.split("_")[1]) - 1
-        custom_id = self.created[idx][0]["custom_id"]
+        request = self.created[idx][0]
+        is_glossary = "format" in request["params"].get("output_config", {})
+        text = self.parent.glossary_json if is_glossary else self.parent.notes
         msg = SimpleNamespace(
             model="claude-opus-5",
             stop_reason=self.parent.stop_reason,
             content=[
                 SimpleNamespace(type="thinking", thinking=""),
-                SimpleNamespace(type="text", text=self.parent.notes),
+                SimpleNamespace(type="text", text=text),
             ],
             usage=SimpleNamespace(input_tokens=10_000, output_tokens=4_000,
                                   cache_creation_input_tokens=0, cache_read_input_tokens=0),
         )
-        yield SimpleNamespace(custom_id=custom_id, result=SimpleNamespace(type="succeeded", message=msg))
+        yield SimpleNamespace(custom_id=request["custom_id"], result=SimpleNamespace(type="succeeded", message=msg))
 
 
 class FakeClient:
@@ -47,6 +50,12 @@ class FakeClient:
         self.finished = False
         self.stop_reason = "end_turn"
         self.notes = "# Notizen\n- Punkt [00:00:10] [Skript S. 1]\n- Falsch [09:00:00] [Skript S. 99]"
+        self.glossary_json = json.dumps({"eintraege": [
+            {"begriff": "Eigenwert", "art": "Begriff", "definition": "Skalar $\\lambda$ mit $Av = \\lambda v$.",
+             "formel": "Av = \\lambda v", "zeitstempel": ["00:00:10", "09:00:00"], "seiten": ["Skript S. 1", "Skript S. 99"]},
+            {"begriff": "Ähnlichkeit", "art": "Satz", "definition": "Ähnliche Matrizen haben dieselben Eigenwerte.",
+             "formel": "", "zeitstempel": [], "seiten": []},
+        ]})
         self.counted = []
         self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self))
 

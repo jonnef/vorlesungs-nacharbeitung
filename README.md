@@ -102,6 +102,7 @@ Studium/
     Skripte/             ← PDFs des Dozenten (auch Unterordner)
     Transkripte/         ← legt der Watcher an
     Notizen/             ← fertige Lernnotizen (Markdown)
+    Glossar.md           ← Glossar des Moduls, wächst mit jeder Vorlesung
 ```
 
 1. PDFs des Dozenten in `Studium/<Modul>/Skripte/` legen. Jedes Skript bekommt ein Kürzel, das
@@ -117,6 +118,20 @@ In der Weboberfläche sieht man pro Vorlesung Status, Höchstkosten, Notizen, da
 Transkript und Warnungen, falls Claude eine Seite oder einen Zeitstempel zitiert, den es
 nicht gibt. Werden später weitere Skripte hochgeladen, erzeugt „Neu erstellen“ die Notizen
 mit dem neuen Material erneut (die aktualisierte Fassung gibt es dann in der Weboberfläche).
+
+## Glossar
+
+Zu jedem Modul entsteht automatisch ein Glossar der wichtigsten Begriffe, Formeln und Sätze:
+
+- Sobald die Notizen einer Vorlesung fertig sind, lässt der Pi Claude daraus Glossareinträge
+  erstellen (Definition, Formel, Video-Zeitstempel, Skriptseite). Das kostet nur ein paar Cent
+  pro Vorlesung, weil nur die Notizen und nicht das ganze Transkript ausgewertet werden.
+- Vorlesungen, die schon vor dem Update fertig waren, werden automatisch nachgeholt.
+- Kommt ein Begriff in mehreren Vorlesungen vor, wird er zu einem Eintrag mit allen Fundstellen
+  zusammengeführt. Abweichende Definitionen bleiben aufklappbar sichtbar.
+- Weboberfläche: Modul → „Glossar“, mit Suche und Filter (Begriffe, Formeln, Sätze).
+  Der Watcher legt es zusätzlich als `Studium/<Modul>/Glossar.md` in iCloud ab.
+- Wird eine Vorlesung neu erstellt, ersetzt ihr neues Glossar die alten Einträge dieser Vorlesung.
 
 ## Entwicklung
 
@@ -138,5 +153,7 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `SCRIPT_CONTEXT_TOKENS` | `60000` | max. Tokens an Skriptseiten pro Vorlesung |
 | `MONTHLY_BUDGET_USD` | `10` | harte Monatsgrenze in der App |
 | `AUTO_SUBMIT` | `1` | `0` = jeden Job manuell freigeben |
+| `GLOSSARY_EFFORT` | `medium` | Denkaufwand für die Glossar-Auswertung |
+| `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
 | `API_TOKEN` | – | gemeinsamer Schlüssel für den Mac-Watcher |
 | `WEB_PASSWORD` | – | optionales Passwort für die Weboberfläche |

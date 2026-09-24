@@ -36,7 +36,21 @@
   input[type=text] { font:inherit; padding:6px 10px; border-radius:8px; border:1px solid var(--line);
           background:var(--bg); color:var(--fg); }
   form.inline { display:inline; }
-  .notes { line-height:1.65; }
+  .notes { line-height:1.65; overflow-wrap:anywhere; }
+  .notes h1 { font-size:1.6em; margin:0 0 .6em; }
+  .notes h2 { font-size:1.3em; margin:1.6em 0 .5em; padding-bottom:.25em; border-bottom:1px solid var(--line); }
+  .notes h3 { font-size:1.1em; margin:1.3em 0 .4em; }
+  .notes ul, .notes ol { padding-left:1.4em; margin:.4em 0; }
+  .notes li { margin:.25em 0; }
+  .notes li > ul, .notes li > ol { margin:.15em 0; }
+  .notes p { margin:.6em 0; }
+  .notes blockquote { margin:.8em 0; padding:.2em 1em; border-left:3px solid var(--line); color:var(--muted); }
+  .notes code { font-family:ui-monospace, monospace; font-size:.9em; background:var(--bg);
+                padding:.1em .35em; border-radius:4px; border:1px solid var(--line); }
+  .notes pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; }
+  .notes pre code { border:0; padding:0; background:none; }
+  .notes table { margin:.8em 0; display:block; overflow-x:auto; }
+  .notes .math.block { margin:.8em 0; overflow-x:auto; overflow-y:hidden; }
   .notes .ts { font-family:ui-monospace, monospace; font-size:13px; color:var(--accent); white-space:nowrap; }
   .notes .page { font-size:13px; color:var(--ok); white-space:nowrap; }
   details summary { cursor:pointer; }

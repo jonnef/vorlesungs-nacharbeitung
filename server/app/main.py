@@ -7,13 +7,15 @@ import tempfile
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 import anthropic
-import markdown as md
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
+from markdown_it import MarkdownIt
+from mdit_py_plugins.dollarmath import dollarmath_plugin
 from pydantic import BaseModel
 
 from .config import settings
@@ -111,9 +113,18 @@ def _create_job(lecture_id: int) -> int:
         raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
 
 
+# CommonMark wie in üblichen Markdown-Editoren (Listen ohne Leerzeile, 2er-Einrückung),
+# plus Tabellen und $…$/$$…$$-Formeln (im Browser mit KaTeX gesetzt). Kein Roh-HTML.
+MARKDOWN = (
+    MarkdownIt("commonmark", {"html": False})
+    .enable(["table", "strikethrough"])
+    .use(dollarmath_plugin, double_inline=True)
+)
+
+
 def render_notes(notes: str) -> str:
     """Markdown → HTML; Zeitstempel und Seitenangaben werden hervorgehoben."""
-    html = md.markdown(notes, extensions=["extra", "sane_lists"])
+    html = MARKDOWN.render(notes)
     html = TS_RE.sub(r'<span class="ts">[\1]</span>', html)
     return PAGE_RE.sub(r'<span class="page">[\1 S. \2]</span>', html)
 
@@ -228,7 +239,10 @@ def lecture_notes_md(lecture_id: int):
     job = service.latest_job(lecture_id)
     if not job or not job.get("notes_md"):
         raise HTTPException(404, "Noch keine Notizen")
-    return job["notes_md"]
+    title = _get("SELECT title FROM lectures WHERE id = ?", lecture_id)["title"]
+    filename = quote(f"{title}.md")  # RFC 5987, damit Umlaute im Dateinamen funktionieren
+    return PlainTextResponse(job["notes_md"], media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
 
 
 @app.post("/lectures/{lecture_id}/jobs", dependencies=[Depends(web_auth)])

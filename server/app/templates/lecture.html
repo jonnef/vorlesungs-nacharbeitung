@@ -38,6 +38,18 @@
 
 {% if notes_html %}
 <article class="card notes">{{ notes_html|safe }}</article>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+  // Formeln ($…$ und $$…$$) setzen; ohne Internet bleibt der LaTeX-Quelltext sichtbar.
+  if (window.katex) {
+    document.querySelectorAll(".notes .math").forEach(function (el) {
+      try {
+        katex.render(el.textContent, el, {displayMode: el.classList.contains("block"), throwOnError: false});
+      } catch (e) {}
+    });
+  }
+</script>
 {% endif %}
 
 <details class="card">

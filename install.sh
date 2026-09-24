@@ -146,9 +146,19 @@ with open(sys.argv[1], "wb") as f:
     plistlib.dump(plist, f)
 EOF
 chmod 600 "$PLIST"
-launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+DOMAIN="gui/$(id -u)"
+launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+# bootout arbeitet asynchron – warten, bis der alte Watcher wirklich weg ist.
+for _ in $(seq 1 20); do
+  launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break
+  sleep 0.5
+done
 : > "$LOG"
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+for attempt in 1 2 3 4 5; do
+  launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null && break
+  (( attempt == 5 )) && die "Watcher konnte nicht gestartet werden (launchctl bootstrap $DOMAIN $PLIST)."
+  sleep 2
+done
 
 echo "Prüfe Zugriff auf iCloud Drive …"
 sleep 8

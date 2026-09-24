@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ module.name }}{% endblock %}
+{% block content %}
+<h1>{{ module.name }}</h1>
+
+<h2>Vorlesungen</h2>
+<div class="card">
+  {% if lectures %}
+  <table>
+    <tr><th>Vorlesung</th><th>Dauer</th><th>Status</th><th>Kosten</th></tr>
+    {% for l in lectures %}
+    <tr>
+      <td><a href="/lectures/{{ l.id }}">{{ l.title }}</a><div class="muted">{{ l.source_filename }}</div></td>
+      <td>{{ fmt_ts(l.duration_sec) }}</td>
+      <td>{% if l.job %}{% include "_status.html" with context %}{% else %}–{% endif %}</td>
+      <td class="muted">{% if l.job %}max. {{ "%.2f"|format(l.job.cost_est_usd) }} USD{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Noch keine Vorlesungen. Leg Videos auf dem Mac in
+  <code>Vorlesungen/{{ module.name }}/Videos/</code> – der Watcher transkribiert sie und schickt sie hierher.</p>
+  {% endif %}
+</div>
+
+<h2>Dozenten-Materialien</h2>
+<div class="card">
+  {% if scripts %}
+  <table>
+    <tr><th>Datei</th><th>Kürzel</th><th>Seiten</th></tr>
+    {% for s in scripts %}
+    <tr><td>{{ s.filename }}</td><td><code>{{ s.kuerzel }}</code></td><td>{{ s.page_count }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Noch keine Materialien.</p>
+  {% endif %}
+  <form method="post" action="/modules/{{ module.id }}/scripts" enctype="multipart/form-data" style="margin-top:12px">
+    <input type="file" name="files" accept=".pdf" multiple required>
+    <input type="submit" value="PDFs hochladen">
+  </form>
+  <p class="muted">Tipp: PDFs in <code>Vorlesungen/{{ module.name }}/Skripte/</code> auf dem Mac werden automatisch hochgeladen.
+  Wer Materialien nachträglich hinzufügt, kann bei einer Vorlesung „Neu erstellen“ wählen.</p>
+</div>
+{% endblock %}

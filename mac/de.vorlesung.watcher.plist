@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- LaunchAgent: startet den Watcher bei der Anmeldung und hält ihn am Laufen.
+     Pfade (DEIN_NAME) und Werte anpassen, dann:
+     cp de.vorlesung.watcher.plist ~/Library/LaunchAgents/
+     launchctl load ~/Library/LaunchAgents/de.vorlesung.watcher.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>de.vorlesung.watcher</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/DEIN_NAME/vorlesungs-nacharbeitung/mac/.venv/bin/python</string>
+    <string>/Users/DEIN_NAME/vorlesungs-nacharbeitung/mac/watcher.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>VORLESUNG_SERVER</key><string>http://raspberrypi.local:8000</string>
+    <key>VORLESUNG_TOKEN</key><string>HIER_API_TOKEN_VOM_PI</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/DEIN_NAME/Library/Logs/vorlesung-watcher.log</string>
+  <key>StandardErrorPath</key><string>/Users/DEIN_NAME/Library/Logs/vorlesung-watcher.log</string>
+</dict>
+</plist>

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Module</h1>
+<div class="card">
+  {% if modules %}
+  <table>
+    <tr><th>Modul</th><th>Skripte</th><th>Vorlesungen</th></tr>
+    {% for m in modules %}
+    <tr><td><a href="/modules/{{ m.id }}">{{ m.name }}</a></td><td>{{ m.scripts }}</td><td>{{ m.lectures }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Noch keine Module. Lege eins an – oder lege auf dem Mac einen Ordner unter
+  <code>iCloud Drive/Vorlesungen/</code> an, dann erscheint es hier automatisch.</p>
+  {% endif %}
+</div>
+<form method="post" action="/modules" class="card">
+  <input type="text" name="name" placeholder="Neues Modul, z. B. Analysis II" required>
+  <input type="submit" value="Anlegen">
+</form>
+{% endblock %}

@@ -1,0 +1,4 @@
+{% set j = l.job if l is defined else job %}
+{% set labels = {"estimated": "wartet auf Freigabe", "blocked": "Budget reicht nicht", "submitted": "läuft",
+                 "done": "fertig", "failed": "Fehler"} %}
+<span class="status s-{{ j.status }}">{{ labels.get(j.status, j.status) }}</span>

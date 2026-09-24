@@ -66,3 +66,37 @@ def test_budget_blocks_job(client):
     assert job["status"] == "blocked"
     assert "Monatsbudget" in job["error"]
     assert "Budget reicht nicht" in client.get(f"/lectures/{lecture_id}").text
+
+
+def _bad_request(message: str):
+    import anthropic
+    import httpx2
+
+    response = httpx2.Response(400, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages/count_tokens"))
+    body = {"type": "error", "error": {"type": "invalid_request_error", "message": message}}
+    return anthropic.BadRequestError(message, response=response, body=body)
+
+
+def test_count_tokens_retries_without_thinking(client, fake_client):
+    original = fake_client.messages.count_tokens
+
+    def strict_count(**params):
+        if "thinking" in params:
+            raise _bad_request("thinking: Extra inputs are not permitted")
+        return original(**params)
+
+    fake_client.messages.count_tokens = strict_count
+    r = _post_lecture(client)
+    assert r.status_code == 200, r.text
+    assert main.service.latest_job(r.json()["lecture_id"])["status"] == "submitted"
+
+
+def test_api_error_shows_reason(client, fake_client):
+    def failing_count(**params):
+        raise _bad_request("Your credit balance is too low to access the Anthropic API.")
+
+    fake_client.messages.count_tokens = failing_count
+    r = _post_lecture(client)
+    assert r.status_code == 502
+    assert "credit balance is too low" in r.json()["detail"]
+    assert "HTTP 400 invalid_request_error" in r.json()["detail"]

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from .config import settings
 from .db import Database
 from .prompt import PAGE_RE, TS_RE
-from .service import BudgetError, Service
+from .service import BudgetError, Service, api_error_text
 from .transcript import fmt_ts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -107,7 +107,8 @@ def _create_job(lecture_id: int) -> int:
     try:
         return service.create_job(lecture_id)
     except anthropic.APIError as e:
-        raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {e}") from e
+        log.error("Token-Zählung für Vorlesung %s fehlgeschlagen: %s", lecture_id, api_error_text(e))
+        raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
 
 
 def render_notes(notes: str) -> str:
@@ -244,6 +245,8 @@ def submit_job(job_id: int):
         service.submit_job(job_id)
     except BudgetError:
         pass  # Grund steht im Job und wird angezeigt
+    except anthropic.APIError as e:
+        service._set(job_id, error=f"Abschicken fehlgeschlagen: {api_error_text(e)}")
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return RedirectResponse(f"/lectures/{job['lecture_id']}", status_code=303)

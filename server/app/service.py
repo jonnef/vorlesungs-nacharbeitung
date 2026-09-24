@@ -26,6 +26,26 @@ class BudgetError(Exception):
     pass
 
 
+def api_error_text(e: anthropic.APIError) -> str:
+    """Lesbare Fehlermeldung der Claude-API inkl. Begründung und Request-ID."""
+    status = getattr(e, "status_code", None)
+    body = getattr(e, "body", None)
+    detail = ""
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        err = body["error"]
+        detail = f"{err.get('type', '')}: {err.get('message', '')}".strip(": ")
+    elif body:
+        detail = str(body)
+    else:
+        response = getattr(e, "response", None)
+        detail = (response.text if response is not None else "") or e.message
+    request_id = getattr(e, "request_id", None)
+    parts = [f"HTTP {status}" if status else type(e).__name__, detail[:500]]
+    if request_id:
+        parts.append(f"(Request-ID {request_id})")
+    return " ".join(p for p in parts if p)
+
+
 class Service:
     def __init__(self, settings: Settings, db: Database, client: anthropic.Anthropic | None = None):
         self.settings = settings
@@ -164,14 +184,7 @@ class Service:
             segments=segments,
             pages=pages,
         )
-        counted = self.client.messages.count_tokens(
-            model=params["model"],
-            system=params["system"],
-            messages=params["messages"],
-            thinking=params["thinking"],
-            output_config=params["output_config"],
-        )
-        input_tokens = counted.input_tokens
+        input_tokens = self._count_tokens(params)
         estimate = pricing.worst_case_usd(params["model"], input_tokens, params["max_tokens"])
         with self.db.connect() as conn:
             job_id = conn.execute(
@@ -188,7 +201,23 @@ class Service:
                 self.submit_job(job_id)
             except BudgetError as e:
                 log.warning("Job %s nicht gestartet: %s", job_id, e)
+            except anthropic.APIError as e:
+                # Job bleibt „wartet auf Freigabe“ und kann in der Weboberfläche erneut gestartet werden.
+                log.error("Job %s konnte nicht abgeschickt werden: %s", job_id, api_error_text(e))
+                self._set(job_id, error=f"Abschicken fehlgeschlagen: {api_error_text(e)}")
         return job_id
+
+    def _count_tokens(self, params: dict) -> int:
+        base = {"model": params["model"], "system": params["system"], "messages": params["messages"]}
+        try:
+            return self.client.messages.count_tokens(
+                **base, thinking=params["thinking"], output_config=params["output_config"]
+            ).input_tokens
+        except anthropic.BadRequestError as e:
+            # Falls der Endpunkt thinking/output_config nicht annimmt: ohne zählen. Die
+            # Abweichung ist klein (die Kostenschätzung rechnet ohnehin mit dem vollen Deckel).
+            log.warning("Token-Zählung mit thinking/effort abgelehnt (%s), zähle ohne.", api_error_text(e))
+            return self.client.messages.count_tokens(**base).input_tokens
 
     def submit_job(self, job_id: int) -> None:
         # Budgetprüfung und Abschicken nicht parallel, sonst könnten zwei Jobs dasselbe Restbudget nutzen.
@@ -235,7 +264,7 @@ class Service:
                 log.warning("Keine Verbindung zu Anthropic: %s", e)
                 return
             except anthropic.APIStatusError as e:
-                log.error("Fehler beim Abfragen von Job %s: %s", job["id"], e)
+                log.error("Fehler beim Abfragen von Job %s: %s", job["id"], api_error_text(e))
 
     def _store_result(self, job: dict, result) -> None:
         if result.type != "succeeded":

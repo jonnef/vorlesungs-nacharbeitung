@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """Mac-Watcher: beobachtet den iCloud-Ordner, transkribiert Videos lokal und holt die Notizen.
 
-Ordnerstruktur (iCloud Drive):
+Ordnerstruktur (iCloud Drive/Dokumente/Studium):
 
     Vorlesungen/
-      <Modul>/
-        Skripte/     ← PDFs des Dozenten (werden auf den Pi hochgeladen)
-        Videos/      ← heruntergeladene Vorlesungsvideos
-        Transkripte/ ← legt der Watcher an (JSON mit Zeitstempeln)
-        Notizen/     ← legt der Watcher an (fertige Markdown-Notizen)
+      <Modul>/          ← heruntergeladene Vorlesungsvideos
+    <Modul>/            ← dein vorhandener Modulordner
+      Skripte/          ← PDFs des Dozenten (werden auf den Pi hochgeladen)
+      Transkripte/      ← legt der Watcher an (JSON mit Zeitstempeln)
+      Notizen/          ← legt der Watcher an (fertige Markdown-Notizen)
 
-Konfiguration über Umgebungsvariablen (siehe de.vorlesung.watcher.plist):
+Konfiguration über Umgebungsvariablen (setzt install.sh im LaunchAgent):
     VORLESUNG_SERVER   z. B. http://raspberrypi.local:8000
     VORLESUNG_TOKEN    derselbe Wert wie API_TOKEN auf dem Pi
-    VORLESUNG_ORDNER   optional, Standard: iCloud Drive/Vorlesungen
+    VORLESUNG_STUDIUM  optional, Standard: iCloud Drive/Dokumente/Studium
+    VORLESUNG_SKRIPTE  optional, Unterordner für Dozenten-PDFs, Standard: Skripte
     WHISPER_MODEL      optional, Standard: mlx-community/whisper-large-v3-turbo
 """
 
@@ -32,7 +33,10 @@ import uuid
 from pathlib import Path
 
 ICLOUD = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"
-ROOT = Path(os.environ.get("VORLESUNG_ORDNER", ICLOUD / "Vorlesungen")).expanduser()
+# „Dokumente“ heißt auf der Festplatte „Documents“.
+STUDIUM = Path(os.environ.get("VORLESUNG_STUDIUM", ICLOUD / "Documents/Studium")).expanduser()
+ROOT = STUDIUM / "Vorlesungen"
+SKRIPTE = os.environ.get("VORLESUNG_SKRIPTE", "Skripte")
 SERVER = os.environ.get("VORLESUNG_SERVER", "http://raspberrypi.local:8000").rstrip("/")
 TOKEN = os.environ.get("VORLESUNG_TOKEN", "")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
@@ -153,13 +157,16 @@ def write_notes(module_dir: Path, video: Path, info: dict) -> None:
 
 # ---------- Hauptschleife ----------
 
-def process_module(module_dir: Path, state: dict, allow_transcribe: bool) -> bool:
-    """Gibt True zurück, wenn in diesem Durchlauf transkribiert wurde (teuer → eins pro Runde)."""
-    module = module_dir.name
-    for sub in ("Skripte", "Videos"):
-        (module_dir / sub).mkdir(exist_ok=True)
+def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool:
+    """Verarbeitet Vorlesungen/<Modul>/ und den zugehörigen Modulordner Studium/<Modul>/.
 
-    for pdf in sorted((module_dir / "Skripte").glob("*")):
+    Gibt True zurück, wenn in diesem Durchlauf transkribiert wurde (teuer → eins pro Runde).
+    """
+    module = video_dir.name
+    module_dir = STUDIUM / module
+    (module_dir / SKRIPTE).mkdir(parents=True, exist_ok=True)
+
+    for pdf in sorted((module_dir / SKRIPTE).rglob("*")):
         if is_placeholder(pdf):
             request_download(pdf)
             continue
@@ -174,7 +181,7 @@ def process_module(module_dir: Path, state: dict, allow_transcribe: bool) -> boo
         save_state(state)
 
     transcribed = False
-    for video in sorted((module_dir / "Videos").glob("*")):
+    for video in sorted(video_dir.glob("*")):
         if is_placeholder(video):
             request_download(video)
             continue
@@ -217,17 +224,23 @@ def process_module(module_dir: Path, state: dict, allow_transcribe: bool) -> boo
 
 
 def run_once(state: dict) -> None:
-    if not ROOT.exists():
-        log.error("Ordner %s existiert nicht.", ROOT)
+    try:
+        ROOT.mkdir(parents=True, exist_ok=True)
+        video_dirs = sorted(p for p in ROOT.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except PermissionError as e:
+        log.error("Kein Zugriff auf %s – Festplattenvollzugriff für Python erteilen (%s).", STUDIUM, e)
         return
     transcribed = False
-    for module_dir in sorted(p for p in ROOT.iterdir() if p.is_dir() and not p.name.startswith(".")):
+    for video_dir in video_dirs:
         try:
-            transcribed |= process_module(module_dir, state, allow_transcribe=not transcribed)
+            transcribed |= process_module(video_dir, state, allow_transcribe=not transcribed)
         except urllib.error.HTTPError as e:
-            log.error("%s: Server antwortet %s: %s", module_dir.name, e.code, e.read().decode(errors="replace"))
+            log.error("%s: Server antwortet %s: %s", video_dir.name, e.code, e.read().decode(errors="replace"))
         except urllib.error.URLError as e:
             log.warning("Pi nicht erreichbar (%s) – nächster Versuch später.", e.reason)
+            return
+        except PermissionError as e:
+            log.error("Kein Zugriff auf %s – Festplattenvollzugriff für Python erteilen (%s).", STUDIUM, e)
             return
 
 
@@ -240,8 +253,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not TOKEN:
         sys.exit("VORLESUNG_TOKEN ist nicht gesetzt.")
-    ROOT.mkdir(parents=True, exist_ok=True)
-    log.info("Beobachte %s, Server %s", ROOT, SERVER)
+    log.info("Beobachte %s, Server %s", STUDIUM, SERVER)
     state = load_state()
     while True:
         run_once(state)

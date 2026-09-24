@@ -20,8 +20,10 @@
 - Nur relevante Skriptseiten senden; Batch-API (−50 %); `max_tokens`-Deckel
 - Schätzung pro Vorlesung (Batch): Opus 5 ~0,28 $, Sonnet 5 ~0,11 $
 
-## Offene Fragen
-1. Welcher Mac (M1/M2/…)? Welcher Pi (4/5, RAM, SD/SSD)?
-2. Modell: Opus 5 oder Sonnet 5 (umschaltbar)?
-3. Video-Player in der Web-App mit Sprung zu Zeitstempeln (komprimierte Kopie auf dem Pi) oder nur Text-Zeitstempel?
-4. Herkunft der Videos: Download (Moodle/Panopto) oder Link?
+## Entscheidungen
+1. Hardware: MacBook Air M4 (16 GB), Raspberry Pi 5
+2. Modell: immer Opus (`claude-opus-5`, über `CLAUDE_MODEL` änderbar)
+3. Kein Video-Player – nur Text-Zeitstempel
+4. Videos werden manuell heruntergeladen und in den iCloud-Ordner gelegt
+
+Umsetzung und Einrichtung: siehe README.md.

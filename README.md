@@ -6,19 +6,21 @@ Notizen ist mit dem Video-Zeitstempel `[hh:mm:ss]` und – wenn vorhanden – de
 Skriptseite `[Kürzel S. 12]` belegt.
 
 ```
-iCloud Drive/Vorlesungen/<Modul>/Videos/VL03.mp4
+iCloud Drive/Dokumente/Studium/Vorlesungen/<Modul>/VL03.mp4
         │  MacBook (M4): mlx-whisper large-v3-turbo, lokal & kostenlos
         ▼
 Raspberry Pi 5: Web-App ── passende Skriptseiten + Transkript ──▶ Claude (Opus 5, Batch-API)
         │                                                       Kosten vorab gezählt,
         ▼                                                       Monatsbudget als harte Grenze
-iCloud Drive/Vorlesungen/<Modul>/Notizen/VL03.md   +   Weboberfläche http://raspberrypi.local:8000
+iCloud Drive/Dokumente/Studium/<Modul>/Notizen/VL03.md   +   Weboberfläche http://raspberrypi.local:8000
 ```
 
 | Ordner | Inhalt |
 |---|---|
 | `server/` | Web-App für den Pi (FastAPI + SQLite): Module, Skript-Upload, Claude-Jobs, Notizen, Kosten |
 | `mac/` | Watcher für den Mac: iCloud-Ordner beobachten, transkribieren, Notizen zurückschreiben |
+| `install.sh` | Einrichtung von Pi und Mac in einem Schritt (läuft auf dem Mac) |
+| `scripts/setup-pi.sh` | Pi-Teil der Einrichtung (wird von `install.sh` per SSH aufgerufen) |
 
 ## 1. Claude API mit Kostenbremse einrichten
 
@@ -27,7 +29,7 @@ iCloud Drive/Vorlesungen/<Modul>/Notizen/VL03.md   +   Weboberfläche http://ras
    abgebucht werden.
 2. Unter **Workspaces** einen eigenen Workspace „Vorlesungen“ anlegen und dort ein
    **Spend Limit** pro Monat setzen (z. B. 10 $).
-3. In diesem Workspace einen API-Key erzeugen. Er kommt nur auf den Pi.
+3. In diesem Workspace einen API-Key erzeugen. `install.sh` legt ihn nur auf dem Pi ab.
 
 Zusätzlich kontrolliert die App die Kosten selbst:
 
@@ -46,73 +48,90 @@ Zusätzlich kontrolliert die App die Kosten selbst:
 (ca. 50–85 k Input-Tokens, 8–15 k Output-Tokens inkl. Denkprozess). Die Obergrenze pro Job
 liegt bei den Standardeinstellungen um 0,45 $.
 
-## 2. Raspberry Pi (Web-App)
+## 2. Installation (ein Befehl, auf dem Mac)
+
+Voraussetzungen: Der Pi läuft mit Raspberry Pi OS, ist im selben Netz und hat SSH aktiviert
+(im Raspberry Pi Imager unter „Dienste“ oder auf dem Pi mit `sudo raspi-config` →
+Interface Options → SSH). Den Claude-API-Key aus Schritt 1 bereithalten.
+
+Im Terminal auf dem Mac:
 
 ```bash
-git clone <dieses Repo> ~/vorlesungs-nacharbeitung
-cd ~/vorlesungs-nacharbeitung/server
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp .env.example .env    # ANTHROPIC_API_KEY, API_TOKEN, Budget eintragen
-.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000   # Test: http://raspberrypi.local:8000
+git clone https://github.com/jonnef/vorlesungs-nacharbeitung.git ~/vorlesungs-nacharbeitung
+~/vorlesungs-nacharbeitung/install.sh
 ```
 
-Dauerhaft als Dienst (startet mit dem Pi): Benutzer und Pfade in `vorlesung.service` prüfen, dann
+Ist das Repository privat und `git clone` fragt nach Zugangsdaten, geht auch: auf GitHub
+„Code → Download ZIP“, entpacken nach `~/vorlesungs-nacharbeitung` und dann `install.sh` starten.
 
-```bash
-sudo cp vorlesung.service /etc/systemd/system/
-sudo systemctl enable --now vorlesung
-journalctl -u vorlesung -f   # Log
-```
+Das Skript fragt nach Pi-Adresse, Pi-Benutzer, Monatsbudget und API-Key und erledigt dann alles:
 
-Daten liegen in `server/data/` (SQLite + hochgeladene PDFs). Für Backups reicht dieser Ordner.
-Die Weboberfläche ist für das Heimnetz gedacht. Mit `WEB_PASSWORD` fragt sie ein Passwort ab.
+- **Pi:** kopiert die App per SSH, installiert sie, erzeugt das API-Token, trägt Key und Budget
+  in `server/.env` ein und richtet den Dienst ein, der mit dem Pi startet.
+- **Mac:** installiert Homebrew (falls nötig), ffmpeg, Python und mlx-whisper, lädt das
+  Whisper-Modell (~1,6 GB), legt `Studium/Vorlesungen/` an (auf Wunsch mit einem Ordner pro
+  vorhandenem Modul) und startet den Watcher als Hintergrunddienst.
+- Falls macOS den Zugriff auf iCloud Drive blockiert, öffnet es die Systemeinstellungen an der
+  richtigen Stelle. Dann musst du Python einmal den Festplattenvollzugriff geben.
 
-## 3. MacBook (Watcher)
+Aktualisieren: `cd ~/vorlesungs-nacharbeitung && git pull && ./install.sh`. Die vorigen Antworten
+werden vorgeschlagen, den API-Key fragt es nicht erneut ab.
 
-```bash
-brew install ffmpeg python@3.12
-git clone <dieses Repo> ~/vorlesungs-nacharbeitung
-cd ~/vorlesungs-nacharbeitung/mac
-python3.12 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-# Einmal manuell testen (lädt beim ersten Mal das Whisper-Modell, ~1,6 GB):
-VORLESUNG_SERVER=http://raspberrypi.local:8000 VORLESUNG_TOKEN=<API_TOKEN vom Pi> \
-  .venv/bin/python watcher.py --once
-```
+Nützliches danach:
 
-Automatisch im Hintergrund: in `de.vorlesung.watcher.plist` `DEIN_NAME`, Server und Token
-eintragen, dann
-
-```bash
-cp de.vorlesung.watcher.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/de.vorlesung.watcher.plist
-tail -f ~/Library/Logs/vorlesung-watcher.log
-```
-
-macOS erlaubt Hintergrundprozessen den Zugriff auf iCloud Drive evtl. erst nach Freigabe:
-**Systemeinstellungen → Datenschutz & Sicherheit → Festplattenvollzugriff** →
-`~/vorlesungs-nacharbeitung/mac/.venv/bin/python` (bzw. die Python-Datei, auf die es zeigt) hinzufügen.
+| | |
+|---|---|
+| Weboberfläche | `http://raspberrypi.local:8000` |
+| Log Mac | `tail -f ~/Library/Logs/vorlesung-watcher.log` |
+| Log Pi | `ssh pi@raspberrypi.local journalctl -u vorlesung -f` |
+| Daten Pi (Backup) | `~/vorlesungs-nacharbeitung/server/data/` |
+| Einstellungen Pi | `~/vorlesungs-nacharbeitung/server/.env`, danach `sudo systemctl restart vorlesung` |
 
 Transkribiert wird nur, während der Mac wach ist. Eine 90-minütige Vorlesung dauert auf
 einem M4 mit `large-v3-turbo` grob 5–10 Minuten.
 
 ## Benutzung
 
-1. Modul anlegen: einfach einen Ordner `iCloud Drive/Vorlesungen/<Modulname>/` erstellen.
-   Der Watcher legt darin `Skripte/` und `Videos/` an.
-2. PDFs des Dozenten in `Skripte/` legen (oder in der Weboberfläche hochladen).
-   Jedes Skript bekommt ein Kürzel, das in den Seitenangaben erscheint.
-3. Heruntergeladene Videos (Moodle/Panopto …) in `Videos/` legen. Ein gut lesbarer Dateiname
-   wird zum Titel, z. B. `VL03 Eigenwerte.mp4`.
-4. Der Watcher transkribiert (Ergebnis zusätzlich in `Transkripte/`), schickt das Transkript
-   an den Pi, der Pi startet den Claude-Job. Nach meist unter einer Stunde liegen die
-   Notizen in `Notizen/` und in der Weboberfläche.
+Alles liegt in `iCloud Drive/Dokumente/Studium/`:
+
+```
+Studium/
+  Vorlesungen/
+    Analysis II/         ← heruntergeladene Videos hier hineinlegen
+  Analysis II/           ← dein vorhandener Modulordner
+    Skripte/             ← PDFs des Dozenten (auch Unterordner)
+    Transkripte/         ← legt der Watcher an
+    Notizen/             ← fertige Lernnotizen (Markdown)
+    Glossar.md           ← Glossar des Moduls, wächst mit jeder Vorlesung
+```
+
+1. PDFs des Dozenten in `Studium/<Modul>/Skripte/` legen. Jedes Skript bekommt ein Kürzel, das
+   in den Seitenangaben erscheint. Andere Dateien im Modulordner werden nicht angefasst.
+2. Heruntergeladene Videos (Moodle/Panopto …) in `Studium/Vorlesungen/<Modul>/` legen. Der
+   Ordnername muss genauso heißen wie der Modulordner. Ein gut lesbarer Dateiname wird zum Titel,
+   z. B. `VL03 Eigenwerte.mp4`.
+3. Der Watcher transkribiert, schickt das Transkript an den Pi, der Pi startet den Claude-Job.
+   Nach meist unter einer Stunde liegen die Notizen in `Studium/<Modul>/Notizen/` und in der
+   Weboberfläche.
 
 In der Weboberfläche sieht man pro Vorlesung Status, Höchstkosten, Notizen, das komplette
 Transkript und Warnungen, falls Claude eine Seite oder einen Zeitstempel zitiert, den es
 nicht gibt. Werden später weitere Skripte hochgeladen, erzeugt „Neu erstellen“ die Notizen
 mit dem neuen Material erneut (die aktualisierte Fassung gibt es dann in der Weboberfläche).
+
+## Glossar
+
+Zu jedem Modul entsteht automatisch ein Glossar der wichtigsten Begriffe, Formeln und Sätze:
+
+- Sobald die Notizen einer Vorlesung fertig sind, lässt der Pi Claude daraus Glossareinträge
+  erstellen (Definition, Formel, Video-Zeitstempel, Skriptseite). Das kostet nur ein paar Cent
+  pro Vorlesung, weil nur die Notizen und nicht das ganze Transkript ausgewertet werden.
+- Vorlesungen, die schon vor dem Update fertig waren, werden automatisch nachgeholt.
+- Kommt ein Begriff in mehreren Vorlesungen vor, wird er zu einem Eintrag mit allen Fundstellen
+  zusammengeführt. Abweichende Definitionen bleiben aufklappbar sichtbar.
+- Weboberfläche: Modul → „Glossar“, mit Suche und Filter (Begriffe, Formeln, Sätze).
+  Der Watcher legt es zusätzlich als `Studium/<Modul>/Glossar.md` in iCloud ab.
+- Wird eine Vorlesung neu erstellt, ersetzt ihr neues Glossar die alten Einträge dieser Vorlesung.
 
 ## Entwicklung
 
@@ -134,5 +153,7 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `SCRIPT_CONTEXT_TOKENS` | `60000` | max. Tokens an Skriptseiten pro Vorlesung |
 | `MONTHLY_BUDGET_USD` | `10` | harte Monatsgrenze in der App |
 | `AUTO_SUBMIT` | `1` | `0` = jeden Job manuell freigeben |
+| `GLOSSARY_EFFORT` | `medium` | Denkaufwand für die Glossar-Auswertung |
+| `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
 | `API_TOKEN` | – | gemeinsamer Schlüssel für den Mac-Watcher |
 | `WEB_PASSWORD` | – | optionales Passwort für die Weboberfläche |

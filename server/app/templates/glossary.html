@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Glossar {{ module.name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="/modules/{{ module.id }}">{{ module.name }}</a></p>
+<h1>Glossar</h1>
+<p class="muted">{{ groups|length }} Einträge aus {{ status.lectures }} Vorlesungen
+  {%- if status.pending %} · {{ status.pending }} Vorlesung(en) werden noch ausgewertet{% endif %}
+  {%- if groups %} · <a href="/modules/{{ module.id }}/glossar.md">Markdown herunterladen</a>{% endif %}</p>
+
+{% if groups %}
+<div class="card glossary-tools">
+  <input type="search" id="q" placeholder="Suchen …" autocomplete="off">
+  <span class="filters">
+    {% for k, label in [("Alle", "Alle"), ("Begriff", "Begriffe"), ("Formel", "Formeln"), ("Satz", "Sätze")] %}
+    <button type="button" class="secondary filter{% if loop.first %} active{% endif %}" data-kind="{{ k }}">{{ label }}</button>
+    {% endfor %}
+  </span>
+</div>
+
+<div class="notes glossary">
+  {% set ns = namespace(letter="") %}
+  {% for g in groups %}
+    {% if initial(g.term) != ns.letter %}{% set ns.letter = initial(g.term) %}<h2 class="letter">{{ ns.letter }}</h2>{% endif %}
+    <div class="card entry" data-kind="{{ g.kind }}" data-search="{{ (g.term ~ ' ' ~ g.definition)|lower }}">
+      <div class="entry-head"><strong>{{ g.term }}</strong> <span class="kind">{{ g.kind }}</span></div>
+      {% if g.definition %}<p>{{ g.definition|inline_md|safe }}</p>{% endif %}
+      {% if g.formula %}<div class="math block">{{ g.formula }}</div>{% endif %}
+      {% if g.other_definitions %}
+      <details><summary class="muted">Weitere Definitionen ({{ g.other_definitions|length }})</summary>
+        {% for o in g.other_definitions %}<p><span class="muted">{{ o.lecture_title }}:</span> {{ o.definition|inline_md|safe }}</p>{% endfor %}
+      </details>
+      {% endif %}
+      <div class="sources">
+        {% for s in g.sources %}
+        <span class="source"><a href="/lectures/{{ s.lecture_id }}">{{ s.lecture_title }}</a>
+          {% for t in s.timestamps %}<span class="ts">[{{ t }}]</span> {% endfor %}
+          {% for p in s.pages %}<span class="page">[{{ p }}]</span> {% endfor %}</span>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+  <p id="empty" class="muted" hidden>Keine Treffer.</p>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+  if (window.katex) {
+    document.querySelectorAll(".glossary .math").forEach(function (el) {
+      try { katex.render(el.textContent, el, {displayMode: el.classList.contains("block"), throwOnError: false}); } catch (e) {}
+    });
+  }
+  (function () {
+    var q = document.getElementById("q"), kind = "Alle";
+    var entries = Array.prototype.slice.call(document.querySelectorAll(".entry"));
+    function apply() {
+      var term = q.value.trim().toLowerCase(), any = false;
+      entries.forEach(function (e) {
+        var show = (kind === "Alle" || e.dataset.kind === kind) && e.dataset.search.indexOf(term) !== -1;
+        e.hidden = !show; any = any || show;
+      });
+      // Buchstaben-Überschriften ohne sichtbare Einträge ausblenden
+      document.querySelectorAll(".glossary .letter").forEach(function (h) {
+        var el = h.nextElementSibling, visible = false;
+        while (el && !el.classList.contains("letter")) { if (el.classList.contains("entry") && !el.hidden) visible = true; el = el.nextElementSibling; }
+        h.hidden = !visible;
+      });
+      document.getElementById("empty").hidden = any;
+    }
+    q.addEventListener("input", apply);
+    document.querySelectorAll(".filter").forEach(function (b) {
+      b.addEventListener("click", function () {
+        document.querySelectorAll(".filter").forEach(function (x) { x.classList.remove("active"); });
+        b.classList.add("active"); kind = b.dataset.kind; apply();
+      });
+    });
+  })();
+</script>
+{% else %}
+<div class="card"><p class="muted">Noch keine Einträge.
+  {% if status.pending %}Das Glossar wird gerade aus den vorhandenen Notizen erstellt – meist in unter einer Stunde.
+  {% else %}Es entsteht automatisch, sobald die erste Vorlesung fertige Notizen hat.{% endif %}</p></div>
+{% endif %}
+{% endblock %}

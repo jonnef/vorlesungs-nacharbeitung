@@ -63,3 +63,16 @@ def test_cost_batch_discount():
     # 1 Mio. Input + 1 Mio. Output bei Opus 5: (5 + 25) * 0.5
     assert pricing.cost_usd("claude-opus-5", 1_000_000, 1_000_000) == 15.0
     assert pricing.cost_usd("claude-opus-5", 1_000_000, 0, batch=False) == 5.0
+
+
+def test_render_notes_lists_math_and_citations():
+    from app.main import render_notes
+
+    html = render_notes(
+        "# T\nText\n- Punkt $a_1 * b_2$ [00:01:02] [Skript S. 3]\n  - Unterpunkt\n- <b>x</b>\n\n"
+        "| A | B |\n|---|---|\n| 1 | 2 |\n"
+    )
+    assert "<ul>\n<li>Punkt" in html and html.count("<ul>") == 2  # Liste ohne Leerzeile, verschachtelt
+    assert '<span class="math inline">a_1 * b_2</span>' in html  # Formel unverändert
+    assert '<span class="ts">[00:01:02]</span>' in html and '<span class="page">[Skript S. 3]</span>' in html
+    assert "&lt;b&gt;" in html and "<table>" in html

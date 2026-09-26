@@ -16,7 +16,7 @@
     {% for r in rows %}
     <tr>
       <td class="muted">{{ r.created_at[:10] }}</td>
-      <td>{% if r.lecture_id %}<a href="/lectures/{{ r.lecture_id }}">{{ r.title }}</a>{% if r.kind == "glossary" %} <span class="muted">(Glossar)</span>{% endif %}{% else %}–{% endif %}</td>
+      <td>{% if r.lecture_id %}<a href="{{ request.state.base }}/lectures/{{ r.lecture_id }}">{{ r.title }}</a>{% if r.kind == "glossary" %} <span class="muted">(Glossar)</span>{% endif %}{% else %}–{% endif %}</td>
       <td>{{ r.input_tokens + r.cache_creation_tokens + r.cache_read_tokens }}</td>
       <td>{{ r.output_tokens }}</td>
       <td>{{ "%.3f"|format(r.cost_usd) }}</td>

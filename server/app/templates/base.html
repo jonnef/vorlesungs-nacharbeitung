@@ -70,8 +70,8 @@
 </head>
 <body>
 <header>
-  <a href="/">Vorlesungen</a>
-  <a href="/kosten">Kosten</a>
+  <a href="{{ request.state.base }}/">Vorlesungen</a>
+  <a href="{{ request.state.base }}/kosten">Kosten</a>
   <span class="budget">{{ b.model }} · {{ "%.2f"|format(b.spent) }} von {{ "%.2f"|format(b.budget) }} USD
     diesen Monat{% if b.reserved > 0 %} (+{{ "%.2f"|format(b.reserved) }} reserviert){% endif %}</span>
 </header>

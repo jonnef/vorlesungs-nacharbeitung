@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Glossar {{ module.name }}{% endblock %}
 {% block content %}
-<p class="muted"><a href="/modules/{{ module.id }}">{{ module.name }}</a></p>
+<p class="muted"><a href="{{ request.state.base }}/modules/{{ module.id }}">{{ module.name }}</a></p>
 <h1>Glossar</h1>
 <p class="muted">{{ groups|length }} Einträge aus {{ status.lectures }} Vorlesungen
   {%- if status.pending %} · {{ status.pending }} Vorlesung(en) werden noch ausgewertet{% endif %}
-  {%- if groups %} · <a href="/modules/{{ module.id }}/glossar.md">Markdown herunterladen</a>{% endif %}</p>
+  {%- if groups %} · <a href="{{ request.state.base }}/modules/{{ module.id }}/glossar.md">Markdown herunterladen</a>{% endif %}</p>
 
 {% if groups %}
 <div class="card glossary-tools">
@@ -32,7 +32,7 @@
       {% endif %}
       <div class="sources">
         {% for s in g.sources %}
-        <span class="source"><a href="/lectures/{{ s.lecture_id }}">{{ s.lecture_title }}</a>
+        <span class="source"><a href="{{ request.state.base }}/lectures/{{ s.lecture_id }}">{{ s.lecture_title }}</a>
           {% for t in s.timestamps %}<span class="ts">[{{ t }}]</span> {% endfor %}
           {% for p in s.pages %}<span class="page">[{{ p }}]</span> {% endfor %}</span>
         {% endfor %}

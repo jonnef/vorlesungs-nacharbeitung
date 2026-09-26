@@ -100,3 +100,16 @@ def test_api_error_shows_reason(client, fake_client):
     assert r.status_code == 502
     assert "credit balance is too low" in r.json()["detail"]
     assert "HTTP 400 invalid_request_error" in r.json()["detail"]
+
+
+def test_forwarded_prefix_for_caddy_subpath(client):
+    headers = {"X-Forwarded-Prefix": "/vorlesungen"}
+    page = client.get("/", headers=headers).text
+    assert 'href="/vorlesungen/kosten"' in page and 'action="/vorlesungen/modules"' in page
+    r = client.post("/modules", data={"name": "Analysis"}, headers=headers, follow_redirects=False)
+    assert r.headers["location"].startswith("/vorlesungen/modules/")
+    # Ohne Header (direkt über Port 8000) bleibt alles wie bisher
+    assert 'href="/kosten"' in client.get("/").text
+    # Manipulierte Header werden ignoriert
+    evil = client.get("/", headers={"X-Forwarded-Prefix": '/x"><script>'}).text
+    assert "<script>" not in evil and 'href="/kosten"' in evil

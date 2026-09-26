@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ lec.title }}{% endblock %}
 {% block content %}
-<p class="muted"><a href="/modules/{{ lec.module_id }}">{{ lec.module }}</a> · {{ lec.source_filename }} · {{ fmt_ts(lec.duration_sec) }}</p>
+<p class="muted"><a href="{{ request.state.base }}/modules/{{ lec.module_id }}">{{ lec.module }}</a> · {{ lec.source_filename }} · {{ fmt_ts(lec.duration_sec) }}</p>
 <h1>{{ lec.title }}</h1>
 
 <div class="card">
@@ -12,20 +12,20 @@
     {% if job.error %}<p class="err">{{ job.error }}</p>{% endif %}
     <div style="margin-top:12px">
     {% if job.status in ("estimated", "blocked") %}
-      <form class="inline" method="post" action="/jobs/{{ job.id }}/submit"><button>Jetzt erstellen</button></form>
+      <form class="inline" method="post" action="{{ request.state.base }}/jobs/{{ job.id }}/submit"><button>Jetzt erstellen</button></form>
     {% endif %}
     {% if job.status == "submitted" %}
       <span class="muted">Batch läuft bei Anthropic (meist unter 1 h).</span>
-      <form class="inline" method="post" action="/poll"><input type="hidden" name="back" value="/lectures/{{ lec.id }}">
+      <form class="inline" method="post" action="{{ request.state.base }}/poll"><input type="hidden" name="back" value="/lectures/{{ lec.id }}">
         <button class="secondary">Jetzt prüfen</button></form>
     {% endif %}
     {% if job.status in ("done", "failed") %}
-      <form class="inline" method="post" action="/lectures/{{ lec.id }}/jobs"><button class="secondary">Neu erstellen</button></form>
+      <form class="inline" method="post" action="{{ request.state.base }}/lectures/{{ lec.id }}/jobs"><button class="secondary">Neu erstellen</button></form>
     {% endif %}
-    {% if notes_html %}<a href="/lectures/{{ lec.id }}/notizen.md" style="margin-left:12px">Markdown herunterladen</a>{% endif %}
+    {% if notes_html %}<a href="{{ request.state.base }}/lectures/{{ lec.id }}/notizen.md" style="margin-left:12px">Markdown herunterladen</a>{% endif %}
     </div>
   {% else %}
-    <form method="post" action="/lectures/{{ lec.id }}/jobs"><button>Kosten schätzen</button></form>
+    <form method="post" action="{{ request.state.base }}/lectures/{{ lec.id }}/jobs"><button>Kosten schätzen</button></form>
   {% endif %}
 </div>
 

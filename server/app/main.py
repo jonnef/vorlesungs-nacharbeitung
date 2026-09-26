@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import secrets
 import tempfile
 import threading
@@ -12,14 +13,14 @@ from urllib.parse import quote
 
 import anthropic
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from pydantic import BaseModel
 
-from . import glossary
+from . import demo, glossary
 from .config import settings
 from .db import Database
 from .prompt import PAGE_RE, TS_RE
@@ -33,6 +34,8 @@ service = Service(settings, Database(settings.db_path))
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals["fmt_ts"] = fmt_ts
 templates.env.globals["initial"] = glossary.initial
+templates.env.globals["demo"] = settings.demo_mode
+templates.env.globals["demo_login_url"] = settings.demo_login_url
 
 
 def _worker(stop: threading.Event) -> None:
@@ -46,6 +49,11 @@ def _worker(stop: threading.Event) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.demo_mode:
+        # Vorschau: Beispieldaten anlegen, kein Hintergrund-Worker (keine Claude-Aufträge).
+        demo.seed_if_empty(service.db)
+        yield
+        return
     stop = threading.Event()
     thread = threading.Thread(target=_worker, args=(stop,), daemon=True)
     thread.start()
@@ -54,6 +62,33 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Vorlesungs-Nacharbeitung", lifespan=lifespan)
+
+# Hinter Caddy läuft die App unter einem Unterpfad (z. B. /vorlesungen). Caddy entfernt ihn und
+# meldet ihn per X-Forwarded-Prefix; Links und Weiterleitungen setzen ihn wieder davor. Direkt
+# über Port 8000 aufgerufen fehlt der Header und alles bleibt wie bisher.
+PREFIX_RE = re.compile(r"^(/[A-Za-z0-9_-]+)*$")
+
+
+@app.middleware("http")
+async def forwarded_prefix(request: Request, call_next):
+    prefix = request.headers.get("x-forwarded-prefix", "").rstrip("/")
+    request.state.base = prefix if PREFIX_RE.match(prefix) else ""
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def read_only_preview(request: Request, call_next):
+    """In der Vorschau ist nur Lesen erlaubt; die API für den Mac-Watcher gibt es dort nicht."""
+    if settings.demo_mode:
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "In der Vorschau nicht verfügbar."}, status_code=404)
+        if request.method not in ("GET", "HEAD"):
+            return PlainTextResponse("In der Vorschau mit Beispieldaten ist das nicht möglich.", status_code=403)
+    return await call_next(request)
+
+
+def _redirect(request: Request, path: str) -> RedirectResponse:
+    return RedirectResponse(request.state.base + path, status_code=303)
 
 # ---------- Zugriffsschutz ----------
 
@@ -221,12 +256,12 @@ def index(request: Request):
 
 
 @app.post("/modules", dependencies=[Depends(web_auth)])
-def create_module(name: str = Form(...)):
+def create_module(request: Request, name: str = Form(...)):
     try:
         module_id = service.get_or_create_module(name)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return RedirectResponse(f"/modules/{module_id}", status_code=303)
+    return _redirect(request, f"/modules/{module_id}")
 
 
 @app.get("/modules/{module_id}", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
@@ -260,11 +295,11 @@ def glossary_md(module_id: int):
 
 
 @app.post("/modules/{module_id}/scripts", dependencies=[Depends(web_auth)])
-def upload_scripts(module_id: int, files: list[UploadFile] = File(...)):
+def upload_scripts(request: Request, module_id: int, files: list[UploadFile] = File(...)):
     _get("SELECT id FROM modules WHERE id = ?", module_id)
     for f in files:
         _add_script(module_id, f)
-    return RedirectResponse(f"/modules/{module_id}", status_code=303)
+    return _redirect(request, f"/modules/{module_id}")
 
 
 @app.get("/lectures/{lecture_id}", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
@@ -293,14 +328,14 @@ def lecture_notes_md(lecture_id: int):
 
 
 @app.post("/lectures/{lecture_id}/jobs", dependencies=[Depends(web_auth)])
-def new_job(lecture_id: int):
+def new_job(request: Request, lecture_id: int):
     _get("SELECT id FROM lectures WHERE id = ?", lecture_id)
     _create_job(lecture_id)
-    return RedirectResponse(f"/lectures/{lecture_id}", status_code=303)
+    return _redirect(request, f"/lectures/{lecture_id}")
 
 
 @app.post("/jobs/{job_id}/submit", dependencies=[Depends(web_auth)])
-def submit_job(job_id: int):
+def submit_job(request: Request, job_id: int):
     job = _get("SELECT * FROM jobs WHERE id = ?", job_id)
     try:
         service.submit_job(job_id)
@@ -310,14 +345,14 @@ def submit_job(job_id: int):
         service._set(job_id, error=f"Abschicken fehlgeschlagen: {api_error_text(e)}")
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return RedirectResponse(f"/lectures/{job['lecture_id']}", status_code=303)
+    return _redirect(request, f"/lectures/{job['lecture_id']}")
 
 
 @app.post("/poll", dependencies=[Depends(web_auth)])
-def poll_now(back: str = Form("/")):
+def poll_now(request: Request, back: str = Form("/")):
     service.poll_jobs()
     safe = back.startswith("/") and not back.startswith("//")
-    return RedirectResponse(back if safe else "/", status_code=303)
+    return _redirect(request, back if safe else "/")
 
 
 @app.get("/kosten", response_class=HTMLResponse, dependencies=[Depends(web_auth)])

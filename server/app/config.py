@@ -47,6 +47,10 @@ class Settings:
     monthly_budget_usd: float = field(default_factory=lambda: float(_env("MONTHLY_BUDGET_USD", "10")))
     # Jobs automatisch abschicken, wenn sie ins Budget passen (sonst Freigabe per Klick).
     auto_submit: bool = field(default_factory=lambda: _env("AUTO_SUBMIT", "1") == "1")
+    # Öffentliche Vorschau: schreibgeschützt, Beispieldaten, kein Claude, keine API.
+    demo_mode: bool = field(default_factory=lambda: _env("DEMO_MODE", "0") == "1")
+    # Wohin „Anmelden“ im Hinweisbalken der Vorschau führt.
+    demo_login_url: str = field(default_factory=lambda: _env("DEMO_LOGIN_URL", "/vorlesungen/"))
     poll_interval_sec: int = field(default_factory=lambda: int(_env("POLL_INTERVAL_SEC", "60")))
 
     @property

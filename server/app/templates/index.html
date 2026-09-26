@@ -14,8 +14,10 @@
   <code>Studium/Vorlesungen/</code> an und leg ein Video hinein, dann erscheint es hier automatisch.</p>
   {% endif %}
 </div>
+{% if not demo %}
 <form method="post" action="{{ request.state.base }}/modules" class="card">
   <input type="text" name="name" placeholder="Neues Modul, z. B. Analysis II" required>
   <input type="submit" value="Anlegen">
 </form>
+{% endif %}
 {% endblock %}

@@ -13,14 +13,14 @@ from urllib.parse import quote
 
 import anthropic
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from pydantic import BaseModel
 
-from . import glossary
+from . import demo, glossary
 from .config import settings
 from .db import Database
 from .prompt import PAGE_RE, TS_RE
@@ -34,6 +34,8 @@ service = Service(settings, Database(settings.db_path))
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals["fmt_ts"] = fmt_ts
 templates.env.globals["initial"] = glossary.initial
+templates.env.globals["demo"] = settings.demo_mode
+templates.env.globals["demo_login_url"] = settings.demo_login_url
 
 
 def _worker(stop: threading.Event) -> None:
@@ -47,6 +49,11 @@ def _worker(stop: threading.Event) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.demo_mode:
+        # Vorschau: Beispieldaten anlegen, kein Hintergrund-Worker (keine Claude-Aufträge).
+        demo.seed_if_empty(service.db)
+        yield
+        return
     stop = threading.Event()
     thread = threading.Thread(target=_worker, args=(stop,), daemon=True)
     thread.start()
@@ -66,6 +73,17 @@ PREFIX_RE = re.compile(r"^(/[A-Za-z0-9_-]+)*$")
 async def forwarded_prefix(request: Request, call_next):
     prefix = request.headers.get("x-forwarded-prefix", "").rstrip("/")
     request.state.base = prefix if PREFIX_RE.match(prefix) else ""
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def read_only_preview(request: Request, call_next):
+    """In der Vorschau ist nur Lesen erlaubt; die API für den Mac-Watcher gibt es dort nicht."""
+    if settings.demo_mode:
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "In der Vorschau nicht verfügbar."}, status_code=404)
+        if request.method not in ("GET", "HEAD"):
+            return PlainTextResponse("In der Vorschau mit Beispieldaten ist das nicht möglich.", status_code=403)
     return await call_next(request)
 
 

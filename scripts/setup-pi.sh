@@ -79,17 +79,39 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-sudo systemctl daemon-reload
-sudo systemctl enable --quiet vorlesung
-sudo systemctl restart vorlesung
+# Öffentliche Vorschau: zweite Instanz mit Beispieldaten in einem eigenen Datenverzeichnis,
+# schreibgeschützt und nur lokal erreichbar (Caddy liefert sie unter /vorschau/vorlesungen/ aus).
+sudo tee /etc/systemd/system/vorlesung-vorschau.service > /dev/null <<EOF
+[Unit]
+Description=Vorlesungs-Nacharbeitung (öffentliche Vorschau mit Beispieldaten)
+After=network-online.target
 
-for _ in $(seq 1 30); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/ || true)
-  if [[ "$code" == "200" || "$code" == "401" ]]; then
-    say "Web-App läuft auf Port 8000."
-    exit 0
-  fi
-  sleep 1
-done
-echo "Fehler: Web-App antwortet nicht. Log: journalctl -u vorlesung -n 50" >&2
-exit 1
+[Service]
+User=$(id -un)
+WorkingDirectory=$SERVER_DIR
+Environment=DEMO_MODE=1
+Environment=DATA_DIR=$SERVER_DIR/data-vorschau
+ExecStart=$SERVER_DIR/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --quiet vorlesung vorlesung-vorschau
+sudo systemctl restart vorlesung vorlesung-vorschau
+
+wait_for() {  # wait_for <port> <name>
+  for _ in $(seq 1 30); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$1/" || true)
+    if [[ "$code" == "200" || "$code" == "401" ]]; then
+      say "$2 läuft auf Port $1."
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+wait_for 8000 "Web-App" || { echo "Fehler: Web-App antwortet nicht. Log: journalctl -u vorlesung -n 50" >&2; exit 1; }
+wait_for 8001 "Vorschau" || { echo "Fehler: Vorschau antwortet nicht. Log: journalctl -u vorlesung-vorschau -n 50" >&2; exit 1; }

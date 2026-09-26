@@ -7,10 +7,13 @@
 <div class="card">
   {% if job %}
     {% include "_status.html" with context %}
+    {% if not demo %}
     <span class="muted">Job #{{ job.id }} · {{ job.model }} · {{ "{:,}".format(job.input_tokens_est).replace(",", ".") }} Input-Tokens
       · höchstens {{ "%.2f"|format(job.cost_est_usd) }} USD</span>
+    {% endif %}
     {% if job.error %}<p class="err">{{ job.error }}</p>{% endif %}
     <div style="margin-top:12px">
+    {% if not demo %}
     {% if job.status in ("estimated", "blocked") %}
       <form class="inline" method="post" action="{{ request.state.base }}/jobs/{{ job.id }}/submit"><button>Jetzt erstellen</button></form>
     {% endif %}
@@ -22,9 +25,10 @@
     {% if job.status in ("done", "failed") %}
       <form class="inline" method="post" action="{{ request.state.base }}/lectures/{{ lec.id }}/jobs"><button class="secondary">Neu erstellen</button></form>
     {% endif %}
+    {% endif %}
     {% if notes_html %}<a href="{{ request.state.base }}/lectures/{{ lec.id }}/notizen.md" style="margin-left:12px">Markdown herunterladen</a>{% endif %}
     </div>
-  {% else %}
+  {% elif not demo %}
     <form method="post" action="{{ request.state.base }}/lectures/{{ lec.id }}/jobs"><button>Kosten schätzen</button></form>
   {% endif %}
 </div>

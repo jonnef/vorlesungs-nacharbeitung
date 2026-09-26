@@ -38,11 +38,13 @@
   {% else %}
   <p class="muted">Noch keine Materialien.</p>
   {% endif %}
+  {% if not demo %}
   <form method="post" action="{{ request.state.base }}/modules/{{ module.id }}/scripts" enctype="multipart/form-data" style="margin-top:12px">
     <input type="file" name="files" accept=".pdf" multiple required>
     <input type="submit" value="PDFs hochladen">
   </form>
   <p class="muted">Tipp: PDFs in <code>Studium/{{ module.name }}/Skripte/</code> auf dem Mac werden automatisch hochgeladen.
   Wer Materialien nachträglich hinzufügt, kann bei einer Vorlesung „Neu erstellen“ wählen.</p>
+  {% endif %}
 </div>
 {% endblock %}

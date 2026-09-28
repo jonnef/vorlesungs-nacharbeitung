@@ -103,6 +103,7 @@ Studium/
     Transkripte/         ← legt der Watcher an
     Notizen/             ← fertige Lernnotizen (Markdown)
     Glossar.md           ← Glossar des Moduls, wächst mit jeder Vorlesung
+    Klausurvorbereitung.md ← Klausurthemen des Moduls, wird mit jeder Vorlesung aktualisiert
 ```
 
 1. PDFs des Dozenten in `Studium/<Modul>/Skripte/` legen. Jedes Skript bekommt ein Kürzel, das
@@ -133,6 +134,23 @@ Zu jedem Modul entsteht automatisch ein Glossar der wichtigsten Begriffe, Formel
   Der Watcher legt es zusätzlich als `Studium/<Modul>/Glossar.md` in iCloud ab.
 - Wird eine Vorlesung neu erstellt, ersetzt ihr neues Glossar die alten Einträge dieser Vorlesung.
 
+## Klausurvorbereitung
+
+Zu jedem Modul entsteht außerdem eine **Klausurvorbereitung**: eine Datei mit den vom Dozenten
+ausdrücklich genannten Klausurthemen, den Kernthemen nach Relevanz (mit Formeln), typischen
+Fehlern, Übungsfragen und einer Checkliste zum Abhaken.
+
+- Grundlage sind die fertigen Notizen aller Vorlesungen des Moduls plus die Stellen im
+  Transkript, an denen der Dozent „Klausur“, „prüfungsrelevant“, „wichtig“ o. Ä. sagt – nicht
+  die kompletten Transkripte.
+- Sie wird neu erstellt, sobald neue Notizen fertig sind (erst wenn im Modul keine Notizen
+  mehr in Arbeit sind). Für bereits vorhandene Vorlesungen entsteht sie automatisch nach dem Update.
+- Quellen lauten `[V2 00:41:10]` (Vorlesung + Zeitstempel) und `[Kürzel S. 12]`; in der
+  Weboberfläche führen sie direkt zur Vorlesung.
+- Weboberfläche: Modul → „Klausurvorbereitung“ (mit „Neu erstellen“). Der Watcher legt sie
+  als `Studium/<Modul>/Klausurvorbereitung.md` in iCloud ab.
+- Kosten: je nach Anzahl der Vorlesungen etwa 0,10–0,30 $ pro Fassung (Batch-Preise).
+
 ## Entwicklung
 
 ```bash
@@ -155,5 +173,7 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `AUTO_SUBMIT` | `1` | `0` = jeden Job manuell freigeben |
 | `GLOSSARY_EFFORT` | `medium` | Denkaufwand für die Glossar-Auswertung |
 | `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
+| `EXAM_EFFORT` | `high` | Denkaufwand für die Klausurvorbereitung |
+| `EXAM_MAX_TOKENS` | `16000` | Deckel für die Klausurvorbereitung |
 | `API_TOKEN` | – | gemeinsamer Schlüssel für den Mac-Watcher |
 | `WEB_PASSWORD` | – | optionales Passwort für die Weboberfläche |

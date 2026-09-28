@@ -18,9 +18,10 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 from mdit_py_plugins.dollarmath import dollarmath_plugin
+from mdit_py_plugins.tasklists import tasklists_plugin
 from pydantic import BaseModel
 
-from . import demo, glossary
+from . import demo, exam, glossary
 from .config import settings
 from .db import Database
 from .prompt import PAGE_RE, TS_RE
@@ -43,6 +44,7 @@ def _worker(stop: threading.Event) -> None:
         try:
             service.poll_jobs()
             service.ensure_glossary_jobs()
+            service.ensure_exam_jobs()
         except Exception:
             log.exception("Fehler im Hintergrund-Worker")
 
@@ -158,6 +160,7 @@ MARKDOWN = (
     MarkdownIt("commonmark", {"html": False})
     .enable(["table", "strikethrough"])
     .use(dollarmath_plugin, double_inline=True)
+    .use(tasklists_plugin)  # "- [ ] …" in Checklisten
 )
 
 
@@ -174,11 +177,17 @@ def render_inline(text: str) -> str:
 
 
 templates.env.filters["inline_md"] = render_inline
+templates.env.filters["fromjson"] = lambda s: json.loads(s or "[]")
 
 
 def _glossary_markdown(module: dict) -> str:
     groups = service.module_glossary(module["id"])
     return glossary.to_markdown(module["name"], groups, datetime.now().strftime("%d.%m.%Y"))
+
+
+def _exam_markdown(module: dict, data: dict) -> str:
+    """Klausurvorbereitung als Datei: Legende der Vorlesungskürzel + Inhalt."""
+    return exam.legend(data["lectures"]) + "\n\n" + data["markdown"].strip() + "\n"
 
 
 def _budget() -> dict:
@@ -243,6 +252,16 @@ def api_glossary(module_name: str):
     return {"count": len(groups), "markdown": _glossary_markdown(dict(row))}
 
 
+@app.get("/api/modules/{module_name}/exam", dependencies=[Depends(api_auth)])
+def api_exam(module_name: str):
+    with service.db.connect() as conn:
+        row = conn.execute("SELECT * FROM modules WHERE name = ?", (module_name,)).fetchone()
+    data = service.module_exam(row["id"]) if row else None
+    if not data or not data["markdown"]:
+        return {"markdown": "", "updated_at": None}
+    return {"markdown": _exam_markdown(dict(row), data), "updated_at": data["updated_at"]}
+
+
 # ---------- Weboberfläche ----------
 
 @app.get("/", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
@@ -275,7 +294,42 @@ def module_page(request: Request, module_id: int):
     return templates.TemplateResponse(request, "module.html", {
         "module": module, "scripts": scripts, "lectures": lectures, "b": _budget(),
         "glossary_count": len(service.module_glossary(module_id)),
-        "glossary_status": service.glossary_status(module_id)})
+        "glossary_status": service.glossary_status(module_id),
+        "exam": service.module_exam(module_id)})
+
+
+@app.get("/modules/{module_id}/klausur", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def exam_page(request: Request, module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    data = service.module_exam(module_id)
+    html = None
+    if data["markdown"]:
+        html = exam.link_citations(render_notes(data["markdown"]), [l["id"] for l in data["lectures"]],
+                                   request.state.base)
+    return templates.TemplateResponse(request, "exam.html", {
+        "module": module, "data": data, "html": html,
+        "lecture_count": len(service.exam_lectures(module_id)), "b": _budget()})
+
+
+@app.get("/modules/{module_id}/klausur.md", response_class=PlainTextResponse, dependencies=[Depends(web_auth)])
+def exam_md(module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    data = service.module_exam(module_id)
+    if not data["markdown"]:
+        raise HTTPException(404, "Noch keine Klausurvorbereitung")
+    filename = quote(f"Klausurvorbereitung {module['name']}.md")
+    return PlainTextResponse(_exam_markdown(module, data), media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
+
+
+@app.post("/modules/{module_id}/klausur", dependencies=[Depends(web_auth)])
+def exam_regenerate(request: Request, module_id: int):
+    _get("SELECT id FROM modules WHERE id = ?", module_id)
+    try:
+        service.create_exam_job(module_id)
+    except anthropic.APIError as e:
+        raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
+    return _redirect(request, f"/modules/{module_id}/klausur")
 
 
 @app.get("/modules/{module_id}/glossar", response_class=HTMLResponse, dependencies=[Depends(web_auth)])

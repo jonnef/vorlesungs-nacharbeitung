@@ -43,13 +43,16 @@ CREATE TABLE IF NOT EXISTS lectures (
     UNIQUE (module_id, source_filename)
 );
 
--- kind: notes (Lernnotizen aus dem Transkript) oder glossary (Glossar aus den Notizen)
+-- kind: notes (Lernnotizen aus dem Transkript), glossary (Glossar aus den Notizen) oder
+--       exam (Klausurvorbereitung des ganzen Moduls; hängt an dessen letzter Vorlesung,
+--       source_ids = [[lecture_id, notes_job_id], …] der verwendeten Notizen)
 -- status: estimated (wartet auf Freigabe), blocked (Budget), submitted, done, failed
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY,
     lecture_id INTEGER NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
     kind TEXT NOT NULL DEFAULT 'notes',
     source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+    source_ids TEXT,
     status TEXT NOT NULL,
     model TEXT NOT NULL,
     request_json TEXT NOT NULL,
@@ -112,6 +115,8 @@ class Database:
             conn.execute("ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'notes'")
         if "source_job_id" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL")
+        if "source_ids" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN source_ids TEXT")
 
     @contextmanager
     def connect(self):

@@ -141,7 +141,80 @@ $$
 ]
 
 
+EXAM = """# Klausurvorbereitung – Beispiel: Lineare Algebra
+
+Im Mittelpunkt stehen Basis und Dimension sowie Eigenwerte und Diagonalisierung. Wer die
+Definitionen sicher beherrscht und das Austauschverfahren sowie das charakteristische Polynom
+rechnen kann, ist gut vorbereitet.
+
+## Vom Dozenten ausdrücklich genannt
+- Das **Austauschverfahren** kommt „garantiert in der Klausur“ [V1 01:07:00]
+- Eigenwerte sind „eines der wichtigsten Themen des Semesters“ [V2 00:00:20]
+
+## Kernthemen
+
+### 1. Basis und Dimension – **hoch**
+*Vom Dozenten angekündigt (Austauschverfahren), Grundlage für alle späteren Themen.*
+- Lineare Unabhängigkeit prüfen: nur die triviale Linearkombination ergibt $0$ [V1 00:21:00] [LA_Skript S. 2]
+- Basis bestimmen und Dimension angeben [V1 00:40:15] [LA_Skript S. 2]
+
+### 2. Eigenwerte und charakteristisches Polynom – **hoch**
+*Vom Dozenten als besonders wichtig bezeichnet.*
+- Eigenwerte als Nullstellen berechnen [V2 00:25:00] [LA_Skript S. 3]
+
+$$
+\\chi_A(\\lambda) = \\det(A - \\lambda E) = 0
+$$
+
+### 3. Diagonalisierung – **mittel**
+*Baut auf Eigenwerten auf; typischer Fehler angesprochen.*
+- $A = S D S^{-1}$, wenn es eine Basis aus Eigenvektoren gibt [V2 00:50:00] [LA_Skript S. 4]
+
+## Typische Fehler
+- Reihenfolge der Eigenvektoren in $S$ passt nicht zu den Eigenwerten in $D$ [V2 01:05:00]
+
+## Übungsfragen
+1. Wann sind Vektoren linear unabhängig? Geben Sie die Definition an. [V1 00:21:00]
+2. Warum haben alle Basen eines Vektorraums gleich viele Elemente? [V1 00:48:00]
+3. Wie berechnet man die Eigenwerte einer $2 \\times 2$-Matrix? [V2 00:25:00]
+4. Unter welcher Bedingung ist eine Matrix diagonalisierbar? [V2 00:50:00]
+
+## Checkliste
+- [ ] Definition lineare Unabhängigkeit
+- [ ] Austauschverfahren an einem Beispiel gerechnet
+- [ ] Charakteristisches Polynom einer $3 \\times 3$-Matrix aufgestellt
+- [ ] Eine Matrix vollständig diagonalisiert
+"""
+
+
+def seed_exam_if_missing(db: Database) -> None:
+    """Beispiel-Klausurvorbereitung (auch für Vorschau-Datenbanken, die schon vorher befüllt wurden)."""
+    with db.connect() as conn:
+        if conn.execute("SELECT COUNT(*) FROM jobs WHERE kind = 'exam'").fetchone()[0]:
+            return
+        rows = conn.execute(
+            "SELECT l.id AS lecture_id, MAX(j.id) AS job_id FROM lectures l"
+            " JOIN jobs j ON j.lecture_id = l.id AND j.kind = 'notes'"
+            " GROUP BY l.id ORDER BY l.source_filename"
+        ).fetchall()
+        if not rows:
+            return
+        conn.execute(
+            "INSERT INTO jobs (lecture_id, kind, source_ids, status, model, request_json, pages_json,"
+            " input_tokens_est, cost_est_usd, notes_md, warnings_json, created_at, updated_at)"
+            " VALUES (?, 'exam', ?, 'done', 'Beispiel', '{}', '[]', 0, 0, ?, '[]', ?, ?)",
+            (rows[-1]["lecture_id"], json.dumps([[r["lecture_id"], r["job_id"]] for r in rows]), EXAM, now(), now()),
+        )
+
+
 def seed_if_empty(db: Database) -> None:
+    try:
+        _seed_module(db)
+    finally:
+        seed_exam_if_missing(db)
+
+
+def _seed_module(db: Database) -> None:
     with db.connect() as conn:
         if conn.execute("SELECT COUNT(*) FROM modules").fetchone()[0]:
             return

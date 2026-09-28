@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Klausurvorbereitung {{ module.name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{{ request.state.base }}/modules/{{ module.id }}">{{ module.name }}</a></p>
+<h1>Klausurvorbereitung</h1>
+
+<div class="card">
+  {% set latest = data.latest %}
+  {% if latest and latest.status in ("estimated", "blocked", "submitted") %}
+    <span class="status s-{{ latest.status }}">{{ {"estimated": "wartet auf Freigabe", "blocked": "Budget reicht nicht", "submitted": "wird aktualisiert"}[latest.status] }}</span>
+    <span class="muted">Neue Fassung aus {{ (latest.source_ids|fromjson)|length }} Vorlesungen{% if not demo %} · höchstens {{ "%.2f"|format(latest.cost_est_usd) }} USD{% endif %}</span>
+    {% if latest.error %}<p class="err">{{ latest.error }}</p>{% endif %}
+    {% if not demo and latest.status in ("estimated", "blocked") %}
+      <form class="inline" method="post" action="{{ request.state.base }}/jobs/{{ latest.id }}/submit"><button>Jetzt erstellen</button></form>
+    {% endif %}
+  {% elif latest and latest.status == "failed" %}
+    <span class="status s-failed">Fehler</span> <span class="err">{{ latest.error }}</span>
+  {% endif %}
+
+  {% if data.markdown %}
+    <p class="muted" style="margin:8px 0 0">Stand {{ data.updated_at[:10] }} · aus {{ data.lectures|length }} Vorlesungen:
+      {% for l in data.lectures %}{% if l.id %}<a href="{{ request.state.base }}/lectures/{{ l.id }}">V{{ loop.index }} {{ l.title }}</a>{% else %}V{{ loop.index }} {{ l.title }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% elif not latest %}
+    <p class="muted" style="margin:0">Die Klausurvorbereitung entsteht automatisch, sobald die erste Vorlesung dieses Moduls fertige Notizen hat.</p>
+  {% endif %}
+
+  <div style="margin-top:12px">
+    {% if data.markdown %}<a href="{{ request.state.base }}/modules/{{ module.id }}/klausur.md">Markdown herunterladen</a>{% endif %}
+    {% if not demo and lecture_count and not (latest and latest.status in ("estimated", "blocked", "submitted")) %}
+      <form class="inline" method="post" action="{{ request.state.base }}/modules/{{ module.id }}/klausur" style="margin-left:12px">
+        <button class="secondary">Neu erstellen</button></form>
+    {% endif %}
+  </div>
+</div>
+
+{% if data.warnings %}
+<div class="card warn">
+  <strong>Bitte prüfen:</strong>
+  <ul>{% for w in data.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if html %}
+<article class="card notes exam" data-key="klausur-{{ module.id }}-{{ data.updated_at }}">{{ html|safe }}</article>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+  if (window.katex) {
+    document.querySelectorAll(".notes .math").forEach(function (el) {
+      try { katex.render(el.textContent, el, {displayMode: el.classList.contains("block"), throwOnError: false}); } catch (e) {}
+    });
+  }
+  // Checkliste: Häkchen pro Fassung im Browser merken
+  (function () {
+    var article = document.querySelector(".exam");
+    var key = article.dataset.key, saved = {};
+    try { saved = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) {}
+    article.querySelectorAll("input.task-list-item-checkbox").forEach(function (box, i) {
+      box.disabled = false;
+      box.checked = !!saved[i];
+      box.addEventListener("change", function () {
+        saved[i] = box.checked;
+        try { localStorage.setItem(key, JSON.stringify(saved)); } catch (e) {}
+      });
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

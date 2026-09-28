@@ -26,6 +26,8 @@ def test_preview_shows_sample_data(demo_client):
     assert 'class="card notes"' in lecture and "Neu erstellen" not in lecture and "Input-Tokens" not in lecture
     glossary = demo_client.get("/modules/1/glossar").text
     assert "Eigenwert" in glossary and "Charakteristisches Polynom" in glossary
+    klausur = demo_client.get("/modules/1/klausur").text
+    assert "Austauschverfahren" in klausur and "Neu erstellen" not in klausur
     # „Basis“ kommt in beiden Vorlesungen vor und wird zusammengeführt
     assert len(main.service.module_glossary(1)) == 7
 

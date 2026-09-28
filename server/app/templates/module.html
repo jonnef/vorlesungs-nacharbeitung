@@ -5,6 +5,11 @@
 <p><a href="{{ request.state.base }}/modules/{{ module.id }}/glossar">Glossar</a>
   <span class="muted">· {{ glossary_count }} Einträge aus {{ glossary_status.lectures }} Vorlesungen
   {%- if glossary_status.pending %} · {{ glossary_status.pending }} in Arbeit{% endif %}</span></p>
+<p><a href="{{ request.state.base }}/modules/{{ module.id }}/klausur">Klausurvorbereitung</a>
+  <span class="muted">·
+  {%- if exam.latest and exam.latest.status in ("estimated", "blocked", "submitted") %} wird aktualisiert
+  {%- elif exam.markdown %} Stand {{ exam.updated_at[:10] }}, aus {{ exam.lectures|length }} Vorlesungen
+  {%- else %} entsteht, sobald Notizen fertig sind{% endif %}</span></p>
 
 <h2>Vorlesungen</h2>
 <div class="card">

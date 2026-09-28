@@ -31,7 +31,8 @@ class FakeBatches:
         idx = int(batch_id.split("_")[1]) - 1
         request = self.created[idx][0]
         is_glossary = "format" in request["params"].get("output_config", {})
-        text = self.parent.glossary_json if is_glossary else self.parent.notes
+        is_exam = "Klausurvorbereitung" in request["params"]["system"]
+        text = self.parent.glossary_json if is_glossary else self.parent.exam_md if is_exam else self.parent.notes
         msg = SimpleNamespace(
             model="claude-opus-5",
             stop_reason=self.parent.stop_reason,
@@ -56,6 +57,9 @@ class FakeClient:
             {"begriff": "Ähnlichkeit", "art": "Satz", "definition": "Ähnliche Matrizen haben dieselben Eigenwerte.",
              "formel": "", "zeitstempel": [], "seiten": []},
         ]})
+        self.exam_md = ("# Klausurvorbereitung – Lineare Algebra\n\n## Vom Dozenten ausdrücklich genannt\n"
+                        "- Eigenwerte kommen dran [V1 00:00:40]\n- Falsch [V9 00:00:10] und [V1 05:00:00]\n\n"
+                        "## Checkliste\n- [ ] Eigenwerte üben")
         self.counted = []
         self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self))
 

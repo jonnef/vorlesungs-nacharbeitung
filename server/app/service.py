@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import glossary, pricing
+from . import exam, glossary, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -189,16 +189,17 @@ class Service:
                                 [[p["kuerzel"], p["label"]] for p in pages])
 
     def _insert_job(self, lecture_id: int, kind: str, params: dict, pages: list,
-                    source_job_id: int | None = None) -> int:
+                    source_job_id: int | None = None, source_ids: list | None = None) -> int:
         """Zählt die Tokens, legt den Job mit Höchstkosten an und startet ihn ggf. automatisch."""
         input_tokens = self._count_tokens(params)
         estimate = pricing.worst_case_usd(params["model"], input_tokens, params["max_tokens"])
         with self.db.connect() as conn:
             job_id = conn.execute(
-                "INSERT INTO jobs (lecture_id, kind, source_job_id, status, model, request_json,"
+                "INSERT INTO jobs (lecture_id, kind, source_job_id, source_ids, status, model, request_json,"
                 " pages_json, input_tokens_est, cost_est_usd, created_at, updated_at)"
-                " VALUES (?, ?, ?, 'estimated', ?, ?, ?, ?, ?, ?, ?)",
-                (lecture_id, kind, source_job_id, params["model"], json.dumps(params),
+                " VALUES (?, ?, ?, ?, 'estimated', ?, ?, ?, ?, ?, ?, ?)",
+                (lecture_id, kind, source_job_id, json.dumps(source_ids) if source_ids is not None else None,
+                 params["model"], json.dumps(params),
                  json.dumps(pages), input_tokens, estimate, now(), now()),
             ).lastrowid
         log.info("Job %s (%s): %s Input-Tokens, max. %.3f USD", job_id, kind, input_tokens, estimate)
@@ -306,6 +307,101 @@ class Service:
         self._set(job["id"], status="done", error=None)
         log.info("Glossar-Job %s fertig: %d Einträge", job["id"], len(entries))
 
+    # ---------- Klausurvorbereitung ----------
+
+    def exam_lectures(self, module_id: int) -> list[dict]:
+        """Vorlesungen des Moduls mit fertigen Notizen (jeweils die neueste Fassung), in Reihenfolge."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT l.id, l.title, l.duration_sec, l.segments_json, n.id AS notes_job_id, n.notes_md"
+                " FROM lectures l JOIN jobs n ON n.lecture_id = l.id AND n.kind = 'notes'"
+                "  AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = l.id AND kind = 'notes')"
+                " WHERE l.module_id = ? AND n.status = 'done' AND n.notes_md IS NOT NULL"
+                " ORDER BY l.source_filename",
+                (module_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def latest_exam_job(self, module_id: int) -> dict | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT j.* FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'exam' ORDER BY j.id DESC LIMIT 1",
+                (module_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def create_exam_job(self, module_id: int) -> int | None:
+        lectures = self.exam_lectures(module_id)
+        if not lectures:
+            return None
+        with self.db.connect() as conn:
+            module = conn.execute("SELECT name FROM modules WHERE id = ?", (module_id,)).fetchone()["name"]
+        params = exam.build_request(
+            model=self.settings.model, effort=self.settings.exam_effort,
+            max_tokens=self.settings.exam_max_tokens, module=module,
+            lectures=[{"title": l["title"], "notes": l["notes_md"], "segments": json.loads(l["segments_json"])}
+                      for l in lectures],
+        )
+        return self._insert_job(
+            lectures[-1]["id"], "exam", params, [],
+            source_ids=[[l["id"], l["notes_job_id"]] for l in lectures],
+        )
+
+    def ensure_exam_jobs(self) -> None:
+        """Erstellt die Klausurvorbereitung neu, sobald neue Notizen fertig sind.
+
+        Wartet, solange im Modul noch Notizen bei Anthropic laufen, damit nicht für jede
+        einzelne Vorlesung eines Stapels eine eigene Fassung entsteht.
+        """
+        with self.db.connect() as conn:
+            modules = [r["id"] for r in conn.execute("SELECT id FROM modules")]
+            busy = {r["module_id"] for r in conn.execute(
+                "SELECT DISTINCT l.module_id FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE j.kind = 'notes' AND j.status = 'submitted'")}
+        for module_id in modules:
+            if module_id in busy:
+                continue
+            lectures = self.exam_lectures(module_id)
+            if not lectures:
+                continue
+            sources = [[l["id"], l["notes_job_id"]] for l in lectures]
+            latest = self.latest_exam_job(module_id)
+            if latest and json.loads(latest["source_ids"] or "[]") == sources:
+                if latest["status"] == "blocked" and self.settings.auto_submit:
+                    try:
+                        self.submit_job(latest["id"])
+                    except (BudgetError, ValueError, anthropic.APIError):
+                        pass
+                continue
+            try:
+                self.create_exam_job(module_id)
+            except anthropic.APIError as e:
+                log.warning("Klausurvorbereitung für Modul %s nicht angelegt: %s", module_id, api_error_text(e))
+                return
+
+    def module_exam(self, module_id: int) -> dict:
+        """Aktuelle Klausurvorbereitung (neueste fertige Fassung) und Status der neuesten Fassung."""
+        latest = self.latest_exam_job(module_id)
+        with self.db.connect() as conn:
+            done = conn.execute(
+                "SELECT j.* FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'exam' AND j.status = 'done' ORDER BY j.id DESC LIMIT 1",
+                (module_id,),
+            ).fetchone()
+            lectures = []
+            if done:
+                for lecture_id, _ in json.loads(done["source_ids"] or "[]"):
+                    row = conn.execute("SELECT id, title FROM lectures WHERE id = ?", (lecture_id,)).fetchone()
+                    lectures.append(dict(row) if row else {"id": None, "title": "(gelöscht)"})
+        return {
+            "markdown": done["notes_md"] if done else None,
+            "warnings": json.loads(done["warnings_json"] or "[]") if done else [],
+            "updated_at": done["updated_at"] if done else None,
+            "lectures": lectures,
+            "latest": latest,
+        }
+
     def submit_job(self, job_id: int) -> None:
         # Budgetprüfung und Abschicken nicht parallel, sonst könnten zwei Jobs dasselbe Restbudget nutzen.
         with self._submit_lock:
@@ -385,6 +481,18 @@ class Service:
                 self._store_glossary(job, text)
             except (json.JSONDecodeError, AttributeError) as e:
                 self._set(job["id"], status="failed", error=f"Glossar-Antwort nicht lesbar: {e}")
+            return
+        if job["kind"] == "exam":
+            sources = json.loads(job["source_ids"] or "[]")
+            with self.db.connect() as conn:
+                lectures = [dict(conn.execute("SELECT title, duration_sec FROM lectures WHERE id = ?",
+                                              (lecture_id,)).fetchone() or {"title": "?", "duration_sec": 0})
+                            for lecture_id, _ in sources]
+            warnings = exam.validate(text, lectures)
+            if msg.stop_reason == "max_tokens":
+                warnings.insert(0, "Antwort wurde beim Token-Deckel abgeschnitten (EXAM_MAX_TOKENS erhöhen).")
+            self._set(job["id"], status="done", notes_md=text, warnings_json=json.dumps(warnings), error=None)
+            log.info("Klausurvorbereitung (Job %s) fertig, %.3f USD", job["id"], cost)
             return
         notes = text
         with self.db.connect() as conn:

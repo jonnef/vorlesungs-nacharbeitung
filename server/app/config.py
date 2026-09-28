@@ -44,6 +44,10 @@ class Settings:
     glossary_effort: str = field(default_factory=lambda: _env("GLOSSARY_EFFORT", "medium"))
     glossary_max_tokens: int = field(default_factory=lambda: int(_env("GLOSSARY_MAX_TOKENS", "10000")))
 
+    # Klausurvorbereitung pro Modul (fasst alle Notizen zusammen).
+    exam_effort: str = field(default_factory=lambda: _env("EXAM_EFFORT", "high"))
+    exam_max_tokens: int = field(default_factory=lambda: int(_env("EXAM_MAX_TOKENS", "16000")))
+
     monthly_budget_usd: float = field(default_factory=lambda: float(_env("MONTHLY_BUDGET_USD", "10")))
     # Jobs automatisch abschicken, wenn sie ins Budget passen (sonst Freigabe per Klick).
     auto_submit: bool = field(default_factory=lambda: _env("AUTO_SUBMIT", "1") == "1")

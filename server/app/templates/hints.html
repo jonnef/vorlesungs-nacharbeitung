@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Prüfungshinweise {{ module.name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{{ request.state.base }}/modules/{{ module.id }}">{{ module.name }}</a></p>
+<h1>Prüfungshinweise</h1>
+<p class="muted">Nur das, was der Dozent ausdrücklich zur Klausur gesagt hat – wörtlich aus den Transkripten,
+  mit Sprung an die Stelle in der Vorlesung. Ausgewertet: {{ status.lectures }} Vorlesungen
+  {%- if status.pending %} · {{ status.pending }} in Arbeit{% endif %}
+  {%- if total %} · <a href="{{ request.state.base }}/modules/{{ module.id }}/pruefungshinweise.md">Markdown herunterladen</a>{% endif %}</p>
+
+{% if total %}
+<div class="card glossary-tools">
+  <input type="search" id="q" placeholder="Thema oder Zitat suchen …" autocomplete="off">
+  <span class="filters">
+    <button type="button" class="secondary filter active" data-kind="">Alle ({{ total }})</button>
+    {% for k, label in hint_kinds.items() %}{% if counts[k] %}
+    <button type="button" class="secondary filter" data-kind="{{ k }}">{{ label }} ({{ counts[k] }})</button>
+    {% endif %}{% endfor %}
+  </span>
+</div>
+
+{% for lec in lectures %}
+<section class="lecture-hints">
+  <h2><a href="{{ request.state.base }}/lectures/{{ lec.id }}">{{ lec.title }}</a></h2>
+  {% for h in lec.hints %}
+  <div class="card hint" data-kind="{{ h.kind }}" data-search="{{ (h.topic ~ ' ' ~ h.quote ~ ' ' ~ h.note)|lower }}">
+    <div class="meta"><span class="kind kind-{{ h.kind }}">{{ hint_kinds[h.kind] }}</span> <strong>{{ h.topic }}</strong></div>
+    <blockquote>„{{ h.quote }}“</blockquote>
+    {% if h.note %}<p style="margin:6px 0">{{ h.note }}</p>{% endif %}
+    <div class="meta">
+      <a class="ts" href="{{ request.state.base }}/lectures/{{ h.lecture_id }}#t-{{ h.seconds }}">[{{ h.timestamp }}] an die Stelle springen</a>
+      {% for p in h.pages %}<span class="page" style="color:var(--ok)">[{{ p }}]</span>{% endfor %}
+      {% if not h.verified %}<span class="warn" title="Das Zitat steht so nicht wörtlich im Transkript – bitte an der Stelle nachhören.">⚠ Zitat nicht wörtlich gefunden</span>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+<p id="empty" class="muted" hidden>Keine Treffer.</p>
+
+<script>
+  (function () {
+    var q = document.getElementById("q"), kind = "";
+    var cards = Array.prototype.slice.call(document.querySelectorAll(".hint"));
+    function apply() {
+      var term = q.value.trim().toLowerCase(), any = false;
+      cards.forEach(function (c) {
+        var show = (!kind || c.dataset.kind === kind) && c.dataset.search.indexOf(term) !== -1;
+        c.hidden = !show; any = any || show;
+      });
+      document.querySelectorAll(".lecture-hints").forEach(function (s) {
+        s.hidden = !s.querySelector(".hint:not([hidden])");
+      });
+      document.getElementById("empty").hidden = any;
+    }
+    q.addEventListener("input", apply);
+    document.querySelectorAll(".filter").forEach(function (b) {
+      b.addEventListener("click", function () {
+        document.querySelectorAll(".filter").forEach(function (x) { x.classList.remove("active"); });
+        b.classList.add("active"); kind = b.dataset.kind; apply();
+      });
+    });
+  })();
+</script>
+{% else %}
+<div class="card"><p class="muted" style="margin:0">
+  {% if status.pending %}Die Vorlesungen werden gerade ausgewertet – meist in unter einer Stunde.
+  {% elif status.lectures %}In den bisherigen Vorlesungen hat der Dozent nichts ausdrücklich zur Klausur gesagt.
+  {% else %}Die Prüfungshinweise entstehen automatisch, sobald Notizen fertig sind.{% endif %}
+</p></div>
+{% endif %}
+{% endblock %}

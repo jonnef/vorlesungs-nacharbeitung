@@ -56,10 +56,26 @@
 </script>
 {% endif %}
 
-<details class="card">
+<details class="card" id="transkript">
   <summary>Transkript ({{ segments|length }} Segmente)</summary>
   <div class="transcript">
-    {% for s in segments %}<div><span class="ts">{{ fmt_ts(s.start) }}</span>{{ s.text }}</div>{% endfor %}
+    {% for s in segments %}<div data-t="{{ s.start|int }}"><span class="ts">{{ fmt_ts(s.start) }}</span>{{ s.text }}</div>{% endfor %}
   </div>
 </details>
+<script>
+  // Sprung aus den Prüfungshinweisen: #t-<Sekunden> öffnet das Transkript an dieser Stelle.
+  (function () {
+    var m = /^#t-(\d+)$/.exec(location.hash);
+    if (!m) return;
+    var t = Number(m[1]), target = null;
+    document.querySelectorAll(".transcript [data-t]").forEach(function (el) {
+      if (Number(el.dataset.t) <= t) target = el;
+    });
+    if (!target) return;
+    document.getElementById("transkript").open = true;
+    target.classList.add("hit");
+    if (target.nextElementSibling) target.nextElementSibling.classList.add("hit");
+    target.scrollIntoView({ block: "center" });
+  })();
+</script>
 {% endblock %}

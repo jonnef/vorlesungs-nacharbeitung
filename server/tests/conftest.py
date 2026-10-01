@@ -31,8 +31,11 @@ class FakeBatches:
         idx = int(batch_id.split("_")[1]) - 1
         request = self.created[idx][0]
         is_glossary = "format" in request["params"].get("output_config", {})
-        is_exam = "Klausurvorbereitung" in request["params"]["system"]
-        text = self.parent.glossary_json if is_glossary else self.parent.exam_md if is_exam else self.parent.notes
+        system = request["params"]["system"]
+        is_exam = "Klausurvorbereitung" in system
+        is_hints = "AUSDRÜCKLICH über die Klausur" in system
+        text = (self.parent.hints_json if is_hints else self.parent.glossary_json if is_glossary
+                else self.parent.exam_md if is_exam else self.parent.notes)
         msg = SimpleNamespace(
             model="claude-opus-5",
             stop_reason=self.parent.stop_reason,
@@ -60,6 +63,14 @@ class FakeClient:
         self.exam_md = ("# Klausurvorbereitung – Lineare Algebra\n\n## Vom Dozenten ausdrücklich genannt\n"
                         "- Eigenwerte kommen dran [V1 00:00:40]\n- Falsch [V9 00:00:10] und [V1 05:00:00]\n\n"
                         "## Checkliste\n- [ ] Eigenwerte üben")
+        self.hints_json = json.dumps({"hinweise": [
+            {"art": "klausurrelevant", "thema": "Klausur", "zitat": "Das kommt garantiert in der Klausur.",
+             "zeitstempel": "00:00:40", "seiten": ["Skript S. 1", "Skript S. 99"], "erlaeuterung": "Wird geprüft."},
+            {"art": "typischer_fehler", "thema": "Erfunden", "zitat": "Das hat der Dozent so nie gesagt.",
+             "zeitstempel": "00:00:08", "seiten": [], "erlaeuterung": ""},
+            {"art": "klausurrelevant", "thema": "Zu spät", "zitat": "Heute geht es um Eigenwerte.",
+             "zeitstempel": "05:00:00", "seiten": [], "erlaeuterung": ""},
+        ]})
         self.counted = []
         self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self))
 

@@ -5,6 +5,9 @@
 <p><a href="{{ request.state.base }}/modules/{{ module.id }}/glossar">Glossar</a>
   <span class="muted">· {{ glossary_count }} Einträge aus {{ glossary_status.lectures }} Vorlesungen
   {%- if glossary_status.pending %} · {{ glossary_status.pending }} in Arbeit{% endif %}</span></p>
+<p><a href="{{ request.state.base }}/modules/{{ module.id }}/pruefungshinweise">Prüfungshinweise</a>
+  <span class="muted">· {{ hint_count }} ausdrückliche Aussagen des Dozenten aus {{ hints_status.lectures }} Vorlesungen
+  {%- if hints_status.pending %} · {{ hints_status.pending }} in Arbeit{% endif %}</span></p>
 <p><a href="{{ request.state.base }}/modules/{{ module.id }}/klausur">Klausurvorbereitung</a>
   <span class="muted">·
   {%- if exam.latest and exam.latest.status in ("estimated", "blocked", "submitted") %} wird aktualisiert

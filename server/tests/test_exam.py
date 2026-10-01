@@ -8,8 +8,10 @@ def _finish_all(fake_client):
     fake_client.finished = True
     main.service.poll_jobs()          # Notizen
     main.service.ensure_glossary_jobs()
+    main.service.ensure_hint_jobs()
+    main.service.poll_jobs()          # Glossar + Prüfungshinweise fertig
     main.service.ensure_exam_jobs()   # Klausurvorbereitung anlegen
-    main.service.poll_jobs()          # Glossar + Klausurvorbereitung fertig
+    main.service.poll_jobs()
 
 
 def _exam_jobs():

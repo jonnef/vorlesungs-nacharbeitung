@@ -11,6 +11,7 @@ Ordnerstruktur (iCloud Drive/Dokumente/Studium):
       Notizen/          ← legt der Watcher an (fertige Markdown-Notizen)
       Glossar.md        ← legt der Watcher an (wächst mit jeder Vorlesung)
       Klausurvorbereitung.md ← legt der Watcher an (wird mit jeder Vorlesung neu erstellt)
+      Prüfungshinweise.md    ← legt der Watcher an (wörtliche Aussagen des Dozenten zur Klausur)
 
 Konfiguration über Umgebungsvariablen (setzt install.sh im LaunchAgent):
     VORLESUNG_SERVER   z. B. http://raspberrypi.local:8000
@@ -173,6 +174,22 @@ def sync_glossary(module: str, module_dir: Path) -> None:
     log.info("Glossar aktualisiert: %s/Glossar.md (%d Einträge)", module, info["count"])
 
 
+def sync_hints(module: str, module_dir: Path) -> None:
+    """Legt Studium/<Modul>/Prüfungshinweise.md an bzw. aktualisiert sie bei neuen Hinweisen."""
+    info = api("GET", f"/api/modules/{quote(module)}/hints")
+    if not info.get("markdown"):
+        return
+    target = module_dir / "Prüfungshinweise.md"
+
+    def content(text: str) -> str:  # Datumszeile ignorieren
+        return "\n".join(line for line in text.splitlines() if not line.startswith("_Stand "))
+
+    if target.exists() and content(target.read_text()) == content(info["markdown"]):
+        return
+    target.write_text(info["markdown"])
+    log.info("Prüfungshinweise aktualisiert: %s/Prüfungshinweise.md (%d Hinweise)", module, info["count"])
+
+
 def sync_exam(module: str, module_dir: Path) -> None:
     """Legt Studium/<Modul>/Klausurvorbereitung.md an bzw. aktualisiert sie bei einer neuen Fassung."""
     info = api("GET", f"/api/modules/{quote(module)}/exam")
@@ -251,6 +268,7 @@ def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool
         save_state(state)
         log.info("%s an den Pi geschickt (Vorlesung #%s)", video.name, res["lecture_id"])
     sync_glossary(module, module_dir)
+    sync_hints(module, module_dir)
     sync_exam(module, module_dir)
     return transcribed
 

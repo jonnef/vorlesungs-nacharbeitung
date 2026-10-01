@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import exam, glossary, pricing
+from . import exam, glossary, hints, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -307,13 +307,108 @@ class Service:
         self._set(job["id"], status="done", error=None)
         log.info("Glossar-Job %s fertig: %d Einträge", job["id"], len(entries))
 
+    # ---------- Prüfungshinweise ----------
+
+    def ensure_hint_jobs(self) -> None:
+        """Wertet jede fertige Notiz (neueste Fassung je Vorlesung) einmal auf Prüfungshinweise aus.
+
+        Enthält das Transkript keine einzige Hinweisstelle, wird ohne Claude-Aufruf ein leeres
+        Ergebnis gespeichert.
+        """
+        with self.db.connect() as conn:
+            pending = conn.execute(
+                "SELECT n.id, n.lecture_id, n.notes_md, n.pages_json, l.title, l.segments_json FROM jobs n"
+                " JOIN lectures l ON l.id = n.lecture_id"
+                " WHERE n.kind = 'notes' AND n.status = 'done' AND n.notes_md IS NOT NULL"
+                " AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = n.lecture_id AND kind = 'notes')"
+                " AND NOT EXISTS (SELECT 1 FROM jobs h WHERE h.kind = 'hints' AND h.source_job_id = n.id)"
+            ).fetchall()
+            blocked = [r["id"] for r in conn.execute("SELECT id FROM jobs WHERE kind = 'hints' AND status = 'blocked'")]
+        for n in pending:
+            blocks = hints.candidate_blocks(json.loads(n["segments_json"]))
+            params = hints.build_request(
+                model=self.settings.model, effort=self.settings.hints_effort,
+                max_tokens=self.settings.hints_max_tokens, title=n["title"], notes=n["notes_md"], blocks=blocks,
+            )
+            if not blocks:
+                self._empty_hints_job(n["lecture_id"], n["id"], params, json.loads(n["pages_json"]))
+                continue
+            try:
+                self._insert_job(n["lecture_id"], "hints", params, json.loads(n["pages_json"]), source_job_id=n["id"])
+            except anthropic.APIError as e:
+                log.warning("Prüfungshinweise für Vorlesung %s nicht angelegt: %s", n["lecture_id"], api_error_text(e))
+                return
+        if self.settings.auto_submit:
+            for job_id in blocked:
+                try:
+                    self.submit_job(job_id)
+                except (BudgetError, ValueError, anthropic.APIError):
+                    break
+
+    def _empty_hints_job(self, lecture_id: int, notes_job_id: int, params: dict, pages: list) -> None:
+        with self.db.connect() as conn:
+            job_id = conn.execute(
+                "INSERT INTO jobs (lecture_id, kind, source_job_id, status, model, request_json, pages_json,"
+                " input_tokens_est, cost_est_usd, created_at, updated_at)"
+                " VALUES (?, 'hints', ?, 'done', ?, '{}', ?, 0, 0, ?, ?)",
+                (lecture_id, notes_job_id, params["model"], json.dumps(pages), now(), now()),
+            ).lastrowid
+            conn.execute("DELETE FROM exam_hints WHERE lecture_id = ?", (lecture_id,))
+        log.info("Prüfungshinweise (Job %s): keine Hinweisstellen im Transkript", job_id)
+
+    def _store_hints(self, job: dict, text: str) -> None:
+        with self.db.connect() as conn:
+            lec = conn.execute("SELECT module_id, duration_sec, segments_json FROM lectures WHERE id = ?",
+                               (job["lecture_id"],)).fetchone()
+            transcript = " ".join(s.get("text", "") for s in json.loads(lec["segments_json"]))
+            entries = hints.parse(text, duration_sec=lec["duration_sec"], transcript=transcript,
+                                  known_pages={tuple(p) for p in json.loads(job["pages_json"])})
+            conn.execute("DELETE FROM exam_hints WHERE lecture_id = ?", (job["lecture_id"],))
+            conn.executemany(
+                "INSERT INTO exam_hints (module_id, lecture_id, job_id, kind, topic, quote, timestamp, seconds,"
+                " pages_json, note, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(lec["module_id"], job["lecture_id"], job["id"], e["kind"], e["topic"], e["quote"], e["timestamp"],
+                  e["seconds"], json.dumps(e["pages"]), e["note"], int(e["verified"])) for e in entries],
+            )
+        self._set(job["id"], status="done", error=None)
+        log.info("Prüfungshinweise (Job %s) fertig: %d Hinweise", job["id"], len(entries))
+
+    def module_hints(self, module_id: int) -> list[dict]:
+        """Alle Hinweise des Moduls, chronologisch (Vorlesung, dann Zeitstempel)."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT h.*, l.title AS lecture_title FROM exam_hints h JOIN lectures l ON l.id = h.lecture_id"
+                " WHERE h.module_id = ? ORDER BY l.source_filename, h.seconds",
+                (module_id,),
+            ).fetchall()
+        result = []
+        for r in rows:
+            h = dict(r)
+            h["pages"] = json.loads(h.pop("pages_json"))
+            h["verified"] = bool(h["verified"])
+            result.append(h)
+        return result
+
+    def hints_status(self, module_id: int) -> dict:
+        with self.db.connect() as conn:
+            done = conn.execute(
+                "SELECT COUNT(DISTINCT j.lecture_id) AS c FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'hints' AND j.status = 'done'", (module_id,)).fetchone()["c"]
+            running = conn.execute(
+                "SELECT COUNT(*) AS c FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'hints' AND j.status IN ('estimated', 'blocked', 'submitted')",
+                (module_id,)).fetchone()["c"]
+        return {"lectures": done, "pending": running}
+
     # ---------- Klausurvorbereitung ----------
 
     def exam_lectures(self, module_id: int) -> list[dict]:
         """Vorlesungen des Moduls mit fertigen Notizen (jeweils die neueste Fassung), in Reihenfolge."""
         with self.db.connect() as conn:
             rows = conn.execute(
-                "SELECT l.id, l.title, l.duration_sec, l.segments_json, n.id AS notes_job_id, n.notes_md"
+                "SELECT l.id, l.title, l.duration_sec, l.segments_json, n.id AS notes_job_id, n.notes_md,"
+                " (SELECT MAX(h.id) FROM jobs h WHERE h.kind = 'hints' AND h.source_job_id = n.id"
+                "  AND h.status IN ('done', 'failed')) AS hints_job_id"
                 " FROM lectures l JOIN jobs n ON n.lecture_id = l.id AND n.kind = 'notes'"
                 "  AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = l.id AND kind = 'notes')"
                 " WHERE l.module_id = ? AND n.status = 'done' AND n.notes_md IS NOT NULL"
@@ -337,16 +432,21 @@ class Service:
             return None
         with self.db.connect() as conn:
             module = conn.execute("SELECT name FROM modules WHERE id = ?", (module_id,)).fetchone()["name"]
+        by_lecture: dict[int, list[dict]] = {}
+        for h in self.module_hints(module_id):
+            by_lecture.setdefault(h["lecture_id"], []).append(h)
         params = exam.build_request(
             model=self.settings.model, effort=self.settings.exam_effort,
             max_tokens=self.settings.exam_max_tokens, module=module,
-            lectures=[{"title": l["title"], "notes": l["notes_md"], "segments": json.loads(l["segments_json"])}
+            lectures=[{"title": l["title"], "notes": l["notes_md"], "segments": json.loads(l["segments_json"]),
+                       "hints": hints.for_exam_prompt(by_lecture.get(l["id"], []))}
                       for l in lectures],
         )
-        return self._insert_job(
-            lectures[-1]["id"], "exam", params, [],
-            source_ids=[[l["id"], l["notes_job_id"]] for l in lectures],
-        )
+        return self._insert_job(lectures[-1]["id"], "exam", params, [], source_ids=self._exam_sources(lectures))
+
+    @staticmethod
+    def _exam_sources(lectures: list[dict]) -> list[list]:
+        return [[l["id"], l["notes_job_id"], l["hints_job_id"]] for l in lectures]
 
     def ensure_exam_jobs(self) -> None:
         """Erstellt die Klausurvorbereitung neu, sobald neue Notizen fertig sind.
@@ -358,14 +458,15 @@ class Service:
             modules = [r["id"] for r in conn.execute("SELECT id FROM modules")]
             busy = {r["module_id"] for r in conn.execute(
                 "SELECT DISTINCT l.module_id FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
-                " WHERE j.kind = 'notes' AND j.status = 'submitted'")}
+                " WHERE (j.kind = 'notes' AND j.status = 'submitted')"
+                "    OR (j.kind = 'hints' AND j.status IN ('estimated', 'blocked', 'submitted'))")}
         for module_id in modules:
             if module_id in busy:
                 continue
             lectures = self.exam_lectures(module_id)
-            if not lectures:
-                continue
-            sources = [[l["id"], l["notes_job_id"]] for l in lectures]
+            if not lectures or any(l["hints_job_id"] is None for l in lectures):
+                continue  # erst die Prüfungshinweise aller Vorlesungen abwarten
+            sources = self._exam_sources(lectures)
             latest = self.latest_exam_job(module_id)
             if latest and json.loads(latest["source_ids"] or "[]") == sources:
                 if latest["status"] == "blocked" and self.settings.auto_submit:
@@ -391,7 +492,7 @@ class Service:
             ).fetchone()
             lectures = []
             if done:
-                for lecture_id, _ in json.loads(done["source_ids"] or "[]"):
+                for lecture_id, *_ in json.loads(done["source_ids"] or "[]"):
                     row = conn.execute("SELECT id, title FROM lectures WHERE id = ?", (lecture_id,)).fetchone()
                     lectures.append(dict(row) if row else {"id": None, "title": "(gelöscht)"})
         return {
@@ -482,12 +583,22 @@ class Service:
             except (json.JSONDecodeError, AttributeError) as e:
                 self._set(job["id"], status="failed", error=f"Glossar-Antwort nicht lesbar: {e}")
             return
+        if job["kind"] == "hints":
+            if msg.stop_reason == "max_tokens":
+                self._set(job["id"], status="failed",
+                          error="Prüfungshinweise beim Token-Deckel abgeschnitten (HINTS_MAX_TOKENS erhöhen).")
+                return
+            try:
+                self._store_hints(job, text)
+            except (json.JSONDecodeError, AttributeError) as e:
+                self._set(job["id"], status="failed", error=f"Antwort nicht lesbar: {e}")
+            return
         if job["kind"] == "exam":
             sources = json.loads(job["source_ids"] or "[]")
             with self.db.connect() as conn:
                 lectures = [dict(conn.execute("SELECT title, duration_sec FROM lectures WHERE id = ?",
                                               (lecture_id,)).fetchone() or {"title": "?", "duration_sec": 0})
-                            for lecture_id, _ in sources]
+                            for lecture_id, *_ in sources]
             warnings = exam.validate(text, lectures)
             if msg.stop_reason == "max_tokens":
                 warnings.insert(0, "Antwort wurde beim Token-Deckel abgeschnitten (EXAM_MAX_TOKENS erhöhen).")

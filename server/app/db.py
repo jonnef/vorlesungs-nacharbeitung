@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS lectures (
 
 -- kind: notes (Lernnotizen aus dem Transkript), glossary (Glossar aus den Notizen) oder
 --       exam (Klausurvorbereitung des ganzen Moduls; hängt an dessen letzter Vorlesung,
---       source_ids = [[lecture_id, notes_job_id], …] der verwendeten Notizen)
+--       source_ids = [[lecture_id, notes_job_id, hints_job_id], …] der verwendeten Quellen)
+--       oder hints (Prüfungshinweise einer Vorlesung, source_job_id = Notizen-Job)
 -- status: estimated (wartet auf Freigabe), blocked (Budget), submitted, done, failed
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY,
@@ -79,6 +80,22 @@ CREATE TABLE IF NOT EXISTS glossary_entries (
     formula TEXT NOT NULL,
     timestamps_json TEXT NOT NULL,
     pages_json TEXT NOT NULL
+);
+
+-- Ausdrückliche Aussagen des Dozenten zur Klausur (kind: siehe hints.KINDS)
+CREATE TABLE IF NOT EXISTS exam_hints (
+    id INTEGER PRIMARY KEY,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    lecture_id INTEGER NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
+    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    quote TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    seconds INTEGER NOT NULL,
+    pages_json TEXT NOT NULL,
+    note TEXT NOT NULL,
+    verified INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS usage_log (

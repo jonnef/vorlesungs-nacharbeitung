@@ -207,10 +207,55 @@ def seed_exam_if_missing(db: Database) -> None:
         )
 
 
+# (Vorlesung, Art, Thema, Zitat aus dem Beispiel-Transkript, Sekunden, Seiten, Erläuterung)
+HINTS = [
+    (0, "nicht_klausurrelevant", "Vektorraumaxiome",
+     "Die Axiome stehen im Skript auf Seite eins, die müssen Sie nicht auswendig können.", 410,
+     ["LA_Skript S. 1"], "Die einzelnen Axiome müssen nicht auswendig gelernt werden."),
+    (0, "klausurrelevant", "Austauschverfahren",
+     "Das Austauschverfahren kommt garantiert in der Klausur dran.", 4020,
+     ["LA_Skript S. 2"], "Das Austauschverfahren sollte man an einem Beispiel sicher durchrechnen können."),
+    (1, "typischer_fehler", "Diagonalisierung",
+     "Achtung, typischer Fehler: Die Reihenfolge in S und D muss zusammenpassen.", 3900,
+     ["LA_Skript S. 4"], "Die Eigenvektoren in S müssen in derselben Reihenfolge stehen wie die Eigenwerte in D."),
+]
+
+
+def seed_hints_if_missing(db: Database) -> None:
+    with db.connect() as conn:
+        if conn.execute("SELECT COUNT(*) FROM jobs WHERE kind = 'hints'").fetchone()[0]:
+            return
+        rows = conn.execute(
+            "SELECT l.id AS lecture_id, l.module_id, MAX(j.id) AS notes_job_id FROM lectures l"
+            " JOIN jobs j ON j.lecture_id = l.id AND j.kind = 'notes' GROUP BY l.id ORDER BY l.source_filename"
+        ).fetchall()
+        if not rows:
+            return
+        job_ids = []
+        for r in rows:
+            job_ids.append(conn.execute(
+                "INSERT INTO jobs (lecture_id, kind, source_job_id, status, model, request_json, pages_json,"
+                " input_tokens_est, cost_est_usd, created_at, updated_at)"
+                " VALUES (?, 'hints', ?, 'done', 'Beispiel', '{}', '[]', 0, 0, ?, ?)",
+                (r["lecture_id"], r["notes_job_id"], now(), now()),
+            ).lastrowid)
+        for index, kind, topic, quote, seconds, pages, note in HINTS:
+            if index < len(rows):
+                r = rows[index]
+                h, m, s = seconds // 3600, seconds % 3600 // 60, seconds % 60
+                conn.execute(
+                    "INSERT INTO exam_hints (module_id, lecture_id, job_id, kind, topic, quote, timestamp, seconds,"
+                    " pages_json, note, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                    (r["module_id"], r["lecture_id"], job_ids[index], kind, topic, quote,
+                     f"{h:02d}:{m:02d}:{s:02d}", seconds, json.dumps(pages), note),
+                )
+
+
 def seed_if_empty(db: Database) -> None:
     try:
         _seed_module(db)
     finally:
+        seed_hints_if_missing(db)
         seed_exam_if_missing(db)
 
 

@@ -104,6 +104,7 @@ Studium/
     Notizen/             ← fertige Lernnotizen (Markdown)
     Glossar.md           ← Glossar des Moduls, wächst mit jeder Vorlesung
     Klausurvorbereitung.md ← Klausurthemen des Moduls, wird mit jeder Vorlesung aktualisiert
+    Prüfungshinweise.md    ← wörtliche Aussagen des Dozenten zur Klausur, mit Quellen
 ```
 
 1. PDFs des Dozenten in `Studium/<Modul>/Skripte/` legen. Jedes Skript bekommt ein Kürzel, das
@@ -133,6 +134,23 @@ Zu jedem Modul entsteht automatisch ein Glossar der wichtigsten Begriffe, Formel
 - Weboberfläche: Modul → „Glossar“, mit Suche und Filter (Begriffe, Formeln, Sätze).
   Der Watcher legt es zusätzlich als `Studium/<Modul>/Glossar.md` in iCloud ab.
 - Wird eine Vorlesung neu erstellt, ersetzt ihr neues Glossar die alten Einträge dieser Vorlesung.
+
+## Prüfungshinweise
+
+Getrennt von der Klausurvorbereitung (die gewichtet und zusammenfasst) gibt es pro Modul die
+**Prüfungshinweise**: ausschließlich das, was der Dozent **ausdrücklich** zur Klausur gesagt hat.
+
+- Pro Hinweis: wörtliches Zitat aus dem Transkript, Thema, ein Satz Einordnung, Vorlesung +
+  Zeitstempel (Klick springt im Transkript an die Stelle) und passende Skriptseiten.
+- Arten: **klausurrelevant**, **kommt nicht dran**, **Klausurformat & Organisation**
+  (Hilfsmittel, Aufgabentypen, Punkte …) und **typischer Fehler** – in der Weboberfläche filterbar.
+- Jedes Zitat wird gegen das Transkript geprüft; steht es dort nicht wörtlich, wird es markiert.
+- Ausgewertet werden nur die Transkript-Stellen rund um Hinweiswörter („Klausur“, „kommt dran“,
+  „müssen Sie können“, „Hilfsmittel“ …) mit etwas Kontext – das kostet nur wenige Cent pro
+  Vorlesung. Ohne solche Stellen gibt es keinen Claude-Aufruf.
+- Die Klausurvorbereitung nutzt die geprüften Hinweise als verlässlichste Quelle.
+- Weboberfläche: Modul → „Prüfungshinweise“. Der Watcher legt sie als
+  `Studium/<Modul>/Prüfungshinweise.md` in iCloud ab.
 
 ## Klausurvorbereitung
 
@@ -173,6 +191,8 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `AUTO_SUBMIT` | `1` | `0` = jeden Job manuell freigeben |
 | `GLOSSARY_EFFORT` | `medium` | Denkaufwand für die Glossar-Auswertung |
 | `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
+| `HINTS_EFFORT` | `medium` | Denkaufwand für die Prüfungshinweise |
+| `HINTS_MAX_TOKENS` | `8000` | Deckel für die Prüfungshinweise einer Vorlesung |
 | `EXAM_EFFORT` | `high` | Denkaufwand für die Klausurvorbereitung |
 | `EXAM_MAX_TOKENS` | `16000` | Deckel für die Klausurvorbereitung |
 | `API_TOKEN` | – | gemeinsamer Schlüssel für den Mac-Watcher |

@@ -72,6 +72,13 @@
   details summary { cursor:pointer; }
   .transcript { font-size:14px; max-height:480px; overflow-y:auto; }
   .transcript .ts { font-family:ui-monospace, monospace; color:var(--muted); margin-right:6px; }
+  .transcript .hit { background:color-mix(in srgb, var(--accent) 14%, transparent); border-radius:6px; }
+  .hint { margin:12px 0; }
+  .hint .kind { font-size:12px; padding:2px 10px; border-radius:99px; border:1px solid currentColor; white-space:nowrap; }
+  .kind-klausurrelevant { color:var(--ok); } .kind-nicht_klausurrelevant { color:var(--muted); }
+  .kind-pruefungsformat { color:var(--accent); } .kind-typischer_fehler { color:var(--warn); }
+  .hint blockquote { margin:10px 0; padding:4px 14px; border-left:3px solid var(--line); font-size:1.05em; }
+  .hint .meta { font-size:14px; display:flex; flex-wrap:wrap; gap:4px 12px; align-items:center; }
 </style>
 </head>
 <body>

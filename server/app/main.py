@@ -21,7 +21,7 @@ from mdit_py_plugins.dollarmath import dollarmath_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 from pydantic import BaseModel
 
-from . import demo, exam, glossary
+from . import demo, exam, glossary, hints
 from .config import settings
 from .db import Database
 from .prompt import PAGE_RE, TS_RE
@@ -35,6 +35,7 @@ service = Service(settings, Database(settings.db_path))
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.globals["fmt_ts"] = fmt_ts
 templates.env.globals["initial"] = glossary.initial
+templates.env.globals["hint_kinds"] = hints.KINDS
 templates.env.globals["demo"] = settings.demo_mode
 templates.env.globals["demo_login_url"] = settings.demo_login_url
 
@@ -44,6 +45,7 @@ def _worker(stop: threading.Event) -> None:
         try:
             service.poll_jobs()
             service.ensure_glossary_jobs()
+            service.ensure_hint_jobs()
             service.ensure_exam_jobs()
         except Exception:
             log.exception("Fehler im Hintergrund-Worker")
@@ -252,6 +254,16 @@ def api_glossary(module_name: str):
     return {"count": len(groups), "markdown": _glossary_markdown(dict(row))}
 
 
+@app.get("/api/modules/{module_name}/hints", dependencies=[Depends(api_auth)])
+def api_hints(module_name: str):
+    with service.db.connect() as conn:
+        row = conn.execute("SELECT * FROM modules WHERE name = ?", (module_name,)).fetchone()
+    if not row or not service.hints_status(row["id"])["lectures"]:
+        return {"count": 0, "markdown": ""}
+    items = service.module_hints(row["id"])
+    return {"count": len(items), "markdown": hints.to_markdown(row["name"], items, datetime.now().strftime("%d.%m.%Y"))}
+
+
 @app.get("/api/modules/{module_name}/exam", dependencies=[Depends(api_auth)])
 def api_exam(module_name: str):
     with service.db.connect() as conn:
@@ -295,7 +307,34 @@ def module_page(request: Request, module_id: int):
         "module": module, "scripts": scripts, "lectures": lectures, "b": _budget(),
         "glossary_count": len(service.module_glossary(module_id)),
         "glossary_status": service.glossary_status(module_id),
-        "exam": service.module_exam(module_id)})
+        "exam": service.module_exam(module_id),
+        "hint_count": len(service.module_hints(module_id)),
+        "hints_status": service.hints_status(module_id)})
+
+
+@app.get("/modules/{module_id}/pruefungshinweise", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def hints_page(request: Request, module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    items = service.module_hints(module_id)
+    lectures: list[dict] = []
+    for h in items:
+        if not lectures or lectures[-1]["id"] != h["lecture_id"]:
+            lectures.append({"id": h["lecture_id"], "title": h["lecture_title"], "hints": []})
+        lectures[-1]["hints"].append(h)
+    counts = {k: sum(1 for h in items if h["kind"] == k) for k in hints.KINDS}
+    return templates.TemplateResponse(request, "hints.html", {
+        "module": module, "lectures": lectures, "counts": counts, "total": len(items),
+        "status": service.hints_status(module_id), "b": _budget()})
+
+
+@app.get("/modules/{module_id}/pruefungshinweise.md", response_class=PlainTextResponse,
+         dependencies=[Depends(web_auth)])
+def hints_md(module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    text = hints.to_markdown(module["name"], service.module_hints(module_id), datetime.now().strftime("%d.%m.%Y"))
+    filename = quote(f"Prüfungshinweise {module['name']}.md")
+    return PlainTextResponse(text, media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
 
 
 @app.get("/modules/{module_id}/klausur", response_class=HTMLResponse, dependencies=[Depends(web_auth)])

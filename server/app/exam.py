@@ -20,7 +20,9 @@ Prüfung oder Wichtiges erwähnt. Erstelle daraus eine Klausurvorbereitung auf D
 Aufbau:
 1. `# Klausurvorbereitung – <Modul>` und 2–3 Sätze, worauf es in diesem Modul ankommt.
 2. `## Vom Dozenten ausdrücklich genannt` – alles, was der Dozent als klausur- oder \
-prüfungsrelevant bezeichnet hat, möglichst wörtlich bzw. sinngemäß, mit Quelle. Nur Belegtes.
+prüfungsrelevant bezeichnet hat, möglichst wörtlich bzw. sinngemäß, mit Quelle. Nur Belegtes. \
+Die bereits geprüften <pruefungshinweise_des_dozenten> sind dafür die verlässlichste Quelle; \
+was dort als „Kommt nicht dran“ steht, gehört nicht zu den Kernthemen.
 3. `## Kernthemen` – die wichtigsten Themen, sortiert nach Klausurrelevanz. Pro Thema: \
 eine Einschätzung (**hoch**/**mittel**), was man können muss, zentrale Formeln (LaTeX mit $…$ \
 bzw. $$…$$) und Quellen. Begründe die Einschätzung kurz (z. B. „vom Dozenten angekündigt“, \
@@ -67,6 +69,9 @@ def build_request(*, model: str, effort: str, max_tokens: int, module: str, lect
     for i, lec in enumerate(lectures):
         parts.append(f'<vorlesung kuerzel="{code(i)}" titel="{escape(lec["title"])}">')
         parts.append("<notizen>\n" + lec["notes"] + "\n</notizen>")
+        if lec.get("hints"):
+            parts.append("<pruefungshinweise_des_dozenten>\n" + escape(lec["hints"], quote=False)
+                         + "\n</pruefungshinweise_des_dozenten>")
         excerpts = hint_excerpts(lec["segments"])
         if excerpts:
             parts.append("<hinweis_stellen_im_transkript>\n" + escape("\n".join(excerpts), quote=False)

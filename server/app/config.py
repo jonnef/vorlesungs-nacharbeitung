@@ -44,6 +44,10 @@ class Settings:
     glossary_effort: str = field(default_factory=lambda: _env("GLOSSARY_EFFORT", "medium"))
     glossary_max_tokens: int = field(default_factory=lambda: int(_env("GLOSSARY_MAX_TOKENS", "10000")))
 
+    # Prüfungshinweise pro Vorlesung (wertet nur Transkript-Stellen rund um Hinweiswörter aus).
+    hints_effort: str = field(default_factory=lambda: _env("HINTS_EFFORT", "medium"))
+    hints_max_tokens: int = field(default_factory=lambda: int(_env("HINTS_MAX_TOKENS", "8000")))
+
     # Klausurvorbereitung pro Modul (fasst alle Notizen zusammen).
     exam_effort: str = field(default_factory=lambda: _env("EXAM_EFFORT", "high"))
     exam_max_tokens: int = field(default_factory=lambda: int(_env("EXAM_MAX_TOKENS", "16000")))

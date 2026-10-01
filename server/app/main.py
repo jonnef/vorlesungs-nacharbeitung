@@ -42,13 +42,13 @@ templates.env.globals["demo_login_url"] = settings.demo_login_url
 
 def _worker(stop: threading.Event) -> None:
     while not stop.wait(settings.poll_interval_sec):
-        try:
-            service.poll_jobs()
-            service.ensure_glossary_jobs()
-            service.ensure_hint_jobs()
-            service.ensure_exam_jobs()
-        except Exception:
-            log.exception("Fehler im Hintergrund-Worker")
+        # Jeder Schritt einzeln, damit ein Fehler (z. B. beim Glossar) die übrigen nicht blockiert.
+        for step in (service.poll_jobs, service.ensure_glossary_jobs, service.ensure_hint_jobs,
+                     service.ensure_exam_jobs):
+            try:
+                step()
+            except Exception:
+                log.exception("Fehler im Hintergrund-Worker (%s)", step.__name__)
 
 
 @asynccontextmanager

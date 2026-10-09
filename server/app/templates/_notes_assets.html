@@ -1,0 +1,156 @@
+{# Darstellung für Notizen und Klausurvorbereitung: Formeln, Diagramme, aufklappbare
+   Abschnitte und Kästen, Folienbilder zu Seitenangaben. Erwartet module_id. #}
+<style>
+  .notes-tools { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; margin:-4px 0 4px; }
+  .notes-tools button { font-size:14px; padding:4px 12px; }
+  .notes details.section { margin:0; }
+  .notes details.section > summary { list-style:none; display:flex; align-items:baseline; gap:8px; }
+  .notes details.section > summary::-webkit-details-marker { display:none; }
+  .notes details.section > summary::before { content:"▸"; color:var(--muted); font-size:.9em; width:1em;
+          flex:none; transition:transform .15s; }
+  .notes details.section[open] > summary::before { transform:rotate(90deg); }
+  .notes details.section > summary > h2, .notes details.section > summary > h3 { flex:1; }
+  .notes details.section > summary > h2 { margin-top:1.2em; }
+  .notes details.section.h3 { margin-left:.2em; }
+  .notes .callout { margin:.8em 0; border:1px solid var(--line); border-left:4px solid var(--c, var(--accent));
+          border-radius:8px; background:color-mix(in srgb, var(--c, var(--accent)) 6%, var(--card)); }
+  .notes .callout > summary { padding:8px 12px; font-weight:600; display:flex; gap:8px; align-items:baseline; }
+  .notes .callout > summary p { margin:0; }
+  .notes .callout-icon { color:var(--c, var(--accent)); width:1.1em; text-align:center; flex:none; }
+  .notes .callout-body { padding:0 14px 8px; }
+  .notes .callout-body > :first-child { margin-top:0; }
+  .notes .callout-example { --c:#7c3aed; } .notes .callout-solution, .notes .callout-answer { --c:var(--ok); }
+  .notes .callout-proof { --c:var(--muted); } .notes .callout-diagram { --c:#0891b2; }
+  .notes .callout-question { --c:var(--accent); } .notes .callout-tip, .notes .callout-hint { --c:#ca8a04; }
+  .notes .callout-warning, .notes .callout-important { --c:var(--warn); }
+  .notes .mermaid-box { margin:.6em 0; overflow-x:auto; text-align:center; }
+  .notes .mermaid-box svg { max-width:100%; height:auto; }
+  .notes .mermaid-error { font-size:13px; color:var(--warn); }
+  .notes button.page { font:inherit; font-size:13px; color:var(--ok); background:none; border:0; padding:0;
+          cursor:zoom-in; white-space:nowrap; text-decoration:underline dotted; }
+  .notes figure.slide { margin:.6em 0; }
+  .notes figure.slide img { display:block; max-width:100%; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  .notes figure.slide figcaption { font-size:13px; color:var(--muted); margin-top:4px; }
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+(function () {
+  var article = document.querySelector("article.notes");
+  if (!article) return;
+  var base = {{ request.state.base|tojson }}, moduleId = {{ module_id|tojson }};
+
+  // Formeln ($…$ und $$…$$) setzen; ohne Internet bleibt der LaTeX-Quelltext sichtbar.
+  if (window.katex) {
+    article.querySelectorAll(".math").forEach(function (el) {
+      try { katex.render(el.textContent, el, {displayMode: el.classList.contains("block"), throwOnError: false}); } catch (e) {}
+    });
+  }
+
+  // Abschnitte (## und ###) aufklappbar machen.
+  function sectionize(container, tag) {
+    var children = Array.prototype.slice.call(container.children);
+    var current = null;
+    children.forEach(function (el) {
+      var isHead = el.tagName === tag, isHigher = tag === "H3" && el.tagName === "H2";
+      if (isHead) {
+        current = document.createElement("details");
+        current.className = "section " + tag.toLowerCase();
+        current.open = true;
+        var summary = document.createElement("summary");
+        container.insertBefore(current, el);
+        summary.appendChild(el);
+        current.appendChild(summary);
+      } else if (isHigher || (el.tagName === "DETAILS" && el.classList.contains("section") && tag === "H3")) {
+        current = null;
+      } else if (current) {
+        current.appendChild(el);
+      }
+    });
+  }
+  sectionize(article, "H2");
+  article.querySelectorAll("details.section.h2").forEach(function (d) { sectionize(d, "H3"); });
+
+  // Diagramme (```mermaid): erst zeichnen, wenn sie sichtbar sind (in zugeklappten Kästen später).
+  var blocks = article.querySelectorAll("pre > code.language-mermaid");
+  if (blocks.length) {
+    var counter = 0, ready = null;
+    function loadMermaid() {
+      if (ready) return ready;
+      ready = new Promise(function (resolve) {
+        var s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js";
+        s.onload = function () {
+          var dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+          mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "neutral", securityLevel: "strict" });
+          resolve(window.mermaid);
+        };
+        s.onerror = function () { resolve(null); };
+        document.head.appendChild(s);
+      });
+      return ready;
+    }
+    function draw(box) {
+      if (box.dataset.done || box.offsetParent === null) return;
+      box.dataset.done = "1";
+      loadMermaid().then(function (m) {
+        if (!m) return;
+        m.render("mmd-" + (++counter), box.dataset.src).then(function (r) {
+          box.innerHTML = r.svg;
+        }).catch(function () {
+          box.insertAdjacentHTML("beforeend", '<div class="mermaid-error">Diagramm konnte nicht gezeichnet werden – Quelltext oben.</div>');
+        });
+      });
+    }
+    var boxes = [];
+    blocks.forEach(function (code) {
+      var pre = code.parentNode, box = document.createElement("div");
+      box.className = "mermaid-box";
+      box.dataset.src = code.textContent;
+      box.appendChild(pre.cloneNode(true));
+      pre.replaceWith(box);
+      boxes.push(box);
+    });
+    function drawVisible() { boxes.forEach(draw); }
+    article.addEventListener("toggle", function () { setTimeout(drawVisible, 0); }, true);
+    drawVisible();
+  }
+
+  // Alles auf- bzw. zuklappen.
+  var tools = document.querySelector(".notes-tools");
+  if (tools) {
+    tools.querySelector("[data-open]").addEventListener("click", function () {
+      article.querySelectorAll("details").forEach(function (d) { d.open = true; });
+    });
+    tools.querySelector("[data-close]").addEventListener("click", function () {
+      article.querySelectorAll("details").forEach(function (d) { d.open = false; });
+    });
+  }
+
+  // Seitenangabe anklicken: Folie darunter einblenden (nochmal klicken blendet sie aus).
+  article.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("button.page");
+    if (!btn || moduleId === null) return;
+    var anchor = btn.closest("li, p, td, dd") || btn.parentNode;
+    var id = "slide-" + btn.dataset.k + "-" + btn.dataset.p;
+    var existing = anchor.querySelector('figure.slide[data-id="' + id + '"]') ||
+                   (anchor.nextElementSibling && anchor.nextElementSibling.matches('figure.slide[data-id="' + id + '"]') ? anchor.nextElementSibling : null);
+    if (existing) { existing.remove(); return; }
+    var fig = document.createElement("figure");
+    fig.className = "slide";
+    fig.dataset.id = id;
+    var img = document.createElement("img");
+    img.alt = btn.textContent;
+    img.loading = "lazy";
+    img.src = base + "/modules/" + moduleId + "/folie/" + encodeURIComponent(btn.dataset.k) + "/" + encodeURIComponent(btn.dataset.p) + ".png";
+    var cap = document.createElement("figcaption");
+    cap.textContent = btn.textContent + " · lädt …";
+    img.onload = function () { cap.textContent = btn.textContent + " · zum Ausblenden erneut auf die Seitenangabe tippen"; };
+    img.onerror = function () { img.remove(); cap.textContent = btn.textContent + ": Folie nicht verfügbar."; };
+    fig.appendChild(img);
+    fig.appendChild(cap);
+    if (anchor.tagName === "LI" || anchor.tagName === "TD" || anchor.tagName === "DD") anchor.appendChild(fig);
+    else anchor.insertAdjacentElement("afterend", fig);
+  });
+})();
+</script>

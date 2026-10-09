@@ -41,15 +41,11 @@
 {% endif %}
 
 {% if html %}
+<div class="notes-tools"><button type="button" class="secondary" data-open>Alles aufklappen</button>
+  <button type="button" class="secondary" data-close>Alles zuklappen</button></div>
 <article class="card notes exam" data-key="klausur-{{ module.id }}-{{ data.updated_at }}">{{ html|safe }}</article>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+{% set module_id = module.id %}{% include "_notes_assets.html" %}
 <script>
-  if (window.katex) {
-    document.querySelectorAll(".notes .math").forEach(function (el) {
-      try { katex.render(el.textContent, el, {displayMode: el.classList.contains("block"), throwOnError: false}); } catch (e) {}
-    });
-  }
   // Checkliste: Häkchen pro Fassung im Browser merken
   (function () {
     var article = document.querySelector(".exam");

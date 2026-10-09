@@ -13,18 +13,15 @@ from urllib.parse import quote
 
 import anthropic
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
-from markdown_it import MarkdownIt
-from mdit_py_plugins.dollarmath import dollarmath_plugin
-from mdit_py_plugins.tasklists import tasklists_plugin
 from pydantic import BaseModel
 
-from . import demo, exam, glossary, hints
+from . import demo, exam, glossary, hints, slides
 from .config import settings
 from .db import Database
-from .prompt import PAGE_RE, TS_RE
+from .render import render_inline, render_notes
 from .service import BudgetError, Service, api_error_text
 from .transcript import fmt_ts
 
@@ -154,28 +151,6 @@ def _create_job(lecture_id: int) -> int:
     except anthropic.APIError as e:
         log.error("Token-Zählung für Vorlesung %s fehlgeschlagen: %s", lecture_id, api_error_text(e))
         raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
-
-
-# CommonMark wie in üblichen Markdown-Editoren (Listen ohne Leerzeile, 2er-Einrückung),
-# plus Tabellen und $…$/$$…$$-Formeln (im Browser mit KaTeX gesetzt). Kein Roh-HTML.
-MARKDOWN = (
-    MarkdownIt("commonmark", {"html": False})
-    .enable(["table", "strikethrough"])
-    .use(dollarmath_plugin, double_inline=True)
-    .use(tasklists_plugin)  # "- [ ] …" in Checklisten
-)
-
-
-def render_notes(notes: str) -> str:
-    """Markdown → HTML; Zeitstempel und Seitenangaben werden hervorgehoben."""
-    html = MARKDOWN.render(notes)
-    html = TS_RE.sub(r'<span class="ts">[\1]</span>', html)
-    return PAGE_RE.sub(r'<span class="page">[\1 S. \2]</span>', html)
-
-
-def render_inline(text: str) -> str:
-    """Einzeilige Markdown-Texte (Glossar-Definitionen) inkl. $…$-Formeln."""
-    return MARKDOWN.renderInline(text)
 
 
 templates.env.filters["inline_md"] = render_inline
@@ -393,6 +368,26 @@ def upload_scripts(request: Request, module_id: int, files: list[UploadFile] = F
     for f in files:
         _add_script(module_id, f)
     return _redirect(request, f"/modules/{module_id}")
+
+
+@app.get("/modules/{module_id}/folie/{kuerzel}/{label}.png", dependencies=[Depends(web_auth)])
+def slide_image(module_id: int, kuerzel: str, label: str):
+    """Seite aus dem Dozenten-PDF als Bild – für die Seitenangaben [Kürzel S. 12] in den Notizen."""
+    row = _get(
+        "SELECT s.id, s.sha256, s.filename, p.page_index FROM scripts s JOIN pages p ON p.script_id = s.id"
+        " WHERE s.module_id = ? AND s.kuerzel = ? AND p.label = ? ORDER BY p.page_index LIMIT 1",
+        module_id, kuerzel, label,
+    )
+    pdf = settings.upload_dir / str(module_id) / f"{row['sha256'][:12]}_{row['filename']}"
+    if not pdf.exists():
+        raise HTTPException(404, "Das PDF liegt nicht mehr auf dem Server.")
+    cache = settings.data_dir / "folien" / str(row["id"]) / f"{row['page_index']}.png"
+    try:
+        png = slides.page_png(pdf, row["page_index"], cache)
+    except Exception as e:  # kaputte oder verschlüsselte PDFs
+        log.warning("Folie %s S. %s nicht darstellbar: %s", kuerzel, label, e)
+        raise HTTPException(404, "Diese Seite lässt sich nicht als Bild darstellen.") from e
+    return FileResponse(png, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.get("/lectures/{lecture_id}", response_class=HTMLResponse, dependencies=[Depends(web_auth)])

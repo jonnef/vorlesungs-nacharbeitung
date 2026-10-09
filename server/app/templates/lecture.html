@@ -33,6 +33,10 @@
   {% endif %}
 </div>
 
+{% if newer_pending %}
+<div class="card muted">Eine neue Fassung dieser Notizen wird gerade erstellt – bis sie fertig ist, siehst du die bisherige.</div>
+{% endif %}
+
 {% if warnings %}
 <div class="card warn">
   <strong>Bitte prüfen:</strong>
@@ -41,19 +45,10 @@
 {% endif %}
 
 {% if notes_html %}
+<div class="notes-tools"><button type="button" class="secondary" data-open>Alles aufklappen</button>
+  <button type="button" class="secondary" data-close>Alles zuklappen</button></div>
 <article class="card notes">{{ notes_html|safe }}</article>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-<script>
-  // Formeln ($…$ und $$…$$) setzen; ohne Internet bleibt der LaTeX-Quelltext sichtbar.
-  if (window.katex) {
-    document.querySelectorAll(".notes .math").forEach(function (el) {
-      try {
-        katex.render(el.textContent, el, {displayMode: el.classList.contains("block"), throwOnError: false});
-      } catch (e) {}
-    });
-  }
-</script>
+{% set module_id = lec.module_id %}{% include "_notes_assets.html" %}
 {% endif %}
 
 <details class="card" id="transkript">

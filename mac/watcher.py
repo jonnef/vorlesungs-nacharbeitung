@@ -228,6 +228,7 @@ def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool
         save_state(state)
 
     transcribed = False
+    versions = None  # neueste fertige Notizen je Vorlesung, erst bei Bedarf abgefragt
     for video in sorted(video_dir.glob("*")):
         if is_placeholder(video):
             request_download(video)
@@ -237,6 +238,20 @@ def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool
         key = f"{module}/{video.name}"
         entry = state["lectures"].get(key, {})
         if (module_dir / "Notizen" / f"{video.stem}.md").exists() and entry.get("status") == "done":
+            # Neue Fassung auf dem Pi (z. B. „Alle Notizen neu erstellen“)? Dann Datei aktualisieren.
+            if versions is None:
+                try:
+                    versions = api("GET", f"/api/modules/{quote(module)}/notes-versions")
+                except urllib.error.HTTPError:  # ältere Server-Version ohne diese Abfrage
+                    versions = {}
+            latest = versions.get(str(entry.get("lecture_id")))
+            if latest and latest != entry.get("notes_job_id"):
+                info = api("GET", f"/api/lectures/{entry['lecture_id']}")
+                if info.get("notes_md"):
+                    write_notes(module_dir, video, info)
+                    entry["notes_job_id"] = info.get("notes_job_id")
+                    state["lectures"][key] = entry
+                    save_state(state)
             continue
 
         if "lecture_id" in entry:
@@ -248,6 +263,7 @@ def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool
             entry["status"] = info["status"]
             if info["status"] == "done" and info.get("notes_md"):
                 write_notes(module_dir, video, info)
+                entry["notes_job_id"] = info.get("notes_job_id")
             state["lectures"][key] = entry
             save_state(state)
             continue

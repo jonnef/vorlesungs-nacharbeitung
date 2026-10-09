@@ -119,7 +119,24 @@ Studium/
 In der Weboberfläche sieht man pro Vorlesung Status, Höchstkosten, Notizen, das komplette
 Transkript und Warnungen, falls Claude eine Seite oder einen Zeitstempel zitiert, den es
 nicht gibt. Werden später weitere Skripte hochgeladen, erzeugt „Neu erstellen“ die Notizen
-mit dem neuen Material erneut (die aktualisierte Fassung gibt es dann in der Weboberfläche).
+mit dem neuen Material erneut (die aktualisierte Fassung landet auch wieder in iCloud).
+
+## Lesen in der Weboberfläche
+
+- **Aufklappen:** Jeder Abschnitt (## und ###) lässt sich einklappen, dazu „Alles auf-/zuklappen“.
+- **Beispiele, Herleitungen, Musterlösungen** stehen in zugeklappten Kästen direkt beim Thema –
+  erst selbst überlegen, dann aufklappen. Beispiele des Dozenten tragen einen Zeitstempel, selbst
+  ausgedachte sind als „(eigenes Beispiel)“ markiert.
+- **Diagramme** (Abläufe, Zusammenhänge, Einteilungen, Funktionsverläufe) zeichnet der Browser
+  aus Mermaid-Code, den Claude in die Notizen schreibt.
+- **Folien:** Ein Klick auf eine Seitenangabe wie `[Skript S. 12]` blendet die Seite aus dem
+  Dozenten-PDF ein (der Pi rendert sie einmal und speichert sie zwischen).
+- In den Markdown-Dateien stehen die Kästen in Obsidian-Schreibweise (`> [!example]- …`).
+
+**Alle Notizen eines Moduls neu erstellen:** Modul → „Alle Notizen neu erstellen …“ zeigt vorher
+erwartete und höchste Kosten (etwa 0,35–0,55 $ pro Vorlesung). Bis die neuen Fassungen fertig sind,
+bleiben die bisherigen sichtbar. Danach entstehen Glossar und Prüfungshinweise neu und – erst wenn
+alle Vorlesungen des Moduls fertig sind – einmal die Klausurvorbereitung.
 
 ## Glossar
 
@@ -156,7 +173,9 @@ Getrennt von der Klausurvorbereitung (die gewichtet und zusammenfasst) gibt es p
 
 Zu jedem Modul entsteht außerdem eine **Klausurvorbereitung**: eine Datei mit den vom Dozenten
 ausdrücklich genannten Klausurthemen, den Kernthemen nach Relevanz (mit Formeln), typischen
-Fehlern, Übungsfragen und einer Checkliste zum Abhaken.
+Fehlern, **8–12 Übungsaufgaben im Stil des Dozenten** (Aufgabentypen und Formulierungen aus
+seinen Vorlesungen und Klausurhinweisen) mit aufklappbarem Tipp und Musterlösung, Kurzfragen
+mit aufklappbarer Antwort und einer Checkliste zum Abhaken.
 
 - Grundlage sind die fertigen Notizen aller Vorlesungen des Moduls plus die Stellen im
   Transkript, an denen der Dozent „Klausur“, „prüfungsrelevant“, „wichtig“ o. Ä. sagt – nicht
@@ -167,7 +186,7 @@ Fehlern, Übungsfragen und einer Checkliste zum Abhaken.
   Weboberfläche führen sie direkt zur Vorlesung.
 - Weboberfläche: Modul → „Klausurvorbereitung“ (mit „Neu erstellen“). Der Watcher legt sie
   als `Studium/<Modul>/Klausurvorbereitung.md` in iCloud ab.
-- Kosten: je nach Anzahl der Vorlesungen etwa 0,10–0,30 $ pro Fassung (Batch-Preise).
+- Kosten: je nach Anzahl der Vorlesungen etwa 0,20–0,60 $ pro Fassung (Batch-Preise).
 
 ## Entwicklung
 
@@ -185,7 +204,7 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 |---|---|---|
 | `CLAUDE_MODEL` | `claude-opus-5` | Modell für die Notizen |
 | `CLAUDE_EFFORT` | `high` | Denkaufwand (`low` … `max`), beeinflusst Qualität und Kosten |
-| `MAX_OUTPUT_TOKENS` | `20000` | Deckel für Antwort + Denkprozess |
+| `MAX_OUTPUT_TOKENS` | `32000` | Deckel für Antwort + Denkprozess |
 | `SCRIPT_CONTEXT_TOKENS` | `60000` | max. Tokens an Skriptseiten pro Vorlesung |
 | `MONTHLY_BUDGET_USD` | `10` | harte Monatsgrenze in der App |
 | `AUTO_SUBMIT` | `1` | `0` = jeden Job manuell freigeben |
@@ -194,6 +213,6 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `HINTS_EFFORT` | `medium` | Denkaufwand für die Prüfungshinweise |
 | `HINTS_MAX_TOKENS` | `8000` | Deckel für die Prüfungshinweise einer Vorlesung |
 | `EXAM_EFFORT` | `high` | Denkaufwand für die Klausurvorbereitung |
-| `EXAM_MAX_TOKENS` | `16000` | Deckel für die Klausurvorbereitung |
+| `EXAM_MAX_TOKENS` | `32000` | Deckel für die Klausurvorbereitung |
 | `API_TOKEN` | – | gemeinsamer Schlüssel für den Mac-Watcher |
 | `WEB_PASSWORD` | – | optionales Passwort für die Weboberfläche |

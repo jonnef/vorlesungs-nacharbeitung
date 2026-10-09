@@ -74,5 +74,21 @@ def test_render_notes_lists_math_and_citations():
     )
     assert "<ul>\n<li>Punkt" in html and html.count("<ul>") == 2  # Liste ohne Leerzeile, verschachtelt
     assert '<span class="math inline">a_1 * b_2</span>' in html  # Formel unverändert
-    assert '<span class="ts">[00:01:02]</span>' in html and '<span class="page">[Skript S. 3]</span>' in html
+    assert '<span class="ts">[00:01:02]</span>' in html
+    assert 'class="page" data-k="Skript" data-p="3"' in html and ">[Skript S. 3]</button>" in html
     assert "&lt;b&gt;" in html and "<table>" in html
+
+
+def test_render_callouts_fold_and_nest():
+    from app.render import render_notes
+
+    html = render_notes(
+        "Vorher\n\n> [!example]- Beispiel: Basis\n> Rechnung $x$\n>\n> > [!solution]+\n> > Lösung\n\n"
+        "```\n> [!note] kein Callout im Code\n```\n\n> [!diagram] Ablauf\n> ```mermaid\n> graph TD; A-->B\n> ```\n"
+    )
+    assert '<details class="callout callout-example"><summary>' in html  # "-" = zugeklappt
+    assert "Beispiel: Basis</summary>" in html and '<span class="math inline">x</span>' in html
+    assert '<details class="callout callout-solution" open>' in html and "Musterlösung</summary>" in html
+    assert "&gt; [!note] kein Callout im Code" in html
+    assert '<details class="callout callout-diagram" open>' in html and 'class="language-mermaid"' in html
+    assert "<p>Vorher</p>" in html

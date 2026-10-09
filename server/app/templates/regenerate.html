@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Notizen neu erstellen – {{ module.name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{{ request.state.base }}/modules/{{ module.id }}">{{ module.name }}</a></p>
+<h1>Alle Notizen neu erstellen</h1>
+
+<div class="card">
+  {% if plan.todo %}
+  <p style="margin-top:0">Claude schreibt die Notizen von <strong>{{ plan.todo|length }} Vorlesungen</strong> neu – mit
+    aufklappbaren Beispielen, Herleitungen und Diagrammen. Bis die neuen Fassungen fertig sind (meist unter einer Stunde),
+    siehst du die bisherigen.</p>
+  <table>
+    <tr><th>Erwartete Kosten</th><td>etwa {{ "%.2f"|format(plan.expected_usd) }} USD</td></tr>
+    <tr><th>Höchstens</th><td>{{ "%.2f"|format(plan.worst_usd) }} USD <span class="muted">(wird im Budget reserviert)</span></td></tr>
+    <tr><th>Budget frei</th><td>{{ "%.2f"|format(plan.budget_left_usd) }} USD diesen Monat</td></tr>
+  </table>
+  {% if plan.worst_usd > plan.budget_left_usd %}
+  <p class="warn">Das freie Budget reicht nicht für alle Vorlesungen auf einmal. Die übrigen warten mit
+    „Budget reicht nicht“ und laufen, sobald Budget frei wird – oder du erhöhst <code>MONTHLY_BUDGET_USD</code>.</p>
+  {% endif %}
+  <p class="muted">Danach entstehen automatisch Glossar und Prüfungshinweise der neuen Fassungen (wenige Cent pro
+    Vorlesung) und – erst wenn alle Vorlesungen fertig sind – einmal die Klausurvorbereitung mit Übungsaufgaben und
+    Musterlösungen.</p>
+  {% if plan.busy %}<p class="muted">{{ plan.busy|length }} Vorlesung(en) werden gerade schon erstellt und bleiben unverändert.</p>{% endif %}
+  <form method="post" action="{{ request.state.base }}/modules/{{ module.id }}/neu-erstellen"
+        onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Wird angelegt …';">
+    <button>{{ plan.todo|length }} Vorlesungen neu erstellen</button>
+    <a href="{{ request.state.base }}/modules/{{ module.id }}" style="margin-left:12px">Abbrechen</a>
+  </form>
+  {% else %}
+  <p style="margin:0">Hier gibt es gerade nichts neu zu erstellen{% if plan.busy %} – {{ plan.busy|length }} Vorlesung(en) werden bereits erstellt{% endif %}.</p>
+  {% endif %}
+</div>
+{% endblock %}

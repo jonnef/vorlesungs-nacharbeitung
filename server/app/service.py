@@ -143,6 +143,53 @@ class Service:
             ).fetchone()
         return dict(row) if row else None
 
+    def latest_notes(self, lecture_id: int) -> dict | None:
+        """Neueste fertige Notizen – bleiben sichtbar, während eine neue Fassung entsteht."""
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE lecture_id = ? AND kind = 'notes' AND status = 'done'"
+                " AND notes_md IS NOT NULL ORDER BY id DESC LIMIT 1",
+                (lecture_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def regeneration_plan(self, module_id: int) -> dict:
+        """Welche Vorlesungen „Alle Notizen neu erstellen“ anfasst und was es ungefähr kostet.
+
+        Höchstkosten wie bei jedem Job (Input + voll ausgeschöpfter Deckel); die Erwartung
+        nimmt die tatsächlichen Kosten der letzten Fassung mal 1,4 (Beispiele und Diagramme
+        machen die Notizen länger), ohne bisherige Kosten die Hälfte der Höchstkosten.
+        """
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT l.id, l.title, j.status, j.input_tokens_est,"
+                " (SELECT COALESCE(SUM(u.cost_usd), 0) FROM usage_log u WHERE u.job_id = j.id) AS cost"
+                " FROM lectures l LEFT JOIN jobs j ON j.id ="
+                "  (SELECT MAX(id) FROM jobs WHERE lecture_id = l.id AND kind = 'notes')"
+                " WHERE l.module_id = ? ORDER BY l.source_filename",
+                (module_id,),
+            ).fetchall()
+        todo, busy = [], []
+        worst = expected = 0.0
+        for r in rows:
+            if r["status"] in ("estimated", "blocked", "submitted"):
+                busy.append(dict(r))
+                continue
+            todo.append(dict(r))
+            cap = pricing.worst_case_usd(self.settings.model, r["input_tokens_est"] or 0, self.settings.max_output_tokens)
+            worst += cap
+            expected += r["cost"] * 1.4 if r["cost"] else cap / 2
+        return {"todo": todo, "busy": busy, "worst_usd": worst, "expected_usd": expected,
+                "budget_left_usd": self.budget_left_usd()}
+
+    def regenerate_module(self, module_id: int) -> int:
+        """Legt für jede Vorlesung des Moduls (ohne laufenden Job) neue Notizen an. Rückgabe: Anzahl."""
+        created = 0
+        for lec in self.regeneration_plan(module_id)["todo"]:
+            self.create_job(lec["id"])
+            created += 1
+        return created
+
     # ---------- Budget ----------
 
     def month_spent_usd(self) -> float:
@@ -410,8 +457,9 @@ class Service:
                 " (SELECT MAX(h.id) FROM jobs h WHERE h.kind = 'hints' AND h.source_job_id = n.id"
                 "  AND h.status IN ('done', 'failed')) AS hints_job_id"
                 " FROM lectures l JOIN jobs n ON n.lecture_id = l.id AND n.kind = 'notes'"
-                "  AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = l.id AND kind = 'notes')"
-                " WHERE l.module_id = ? AND n.status = 'done' AND n.notes_md IS NOT NULL"
+                "  AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = l.id AND kind = 'notes'"
+                "              AND status = 'done' AND notes_md IS NOT NULL)"
+                " WHERE l.module_id = ?"
                 " ORDER BY l.source_filename",
                 (module_id,),
             ).fetchall()
@@ -451,14 +499,15 @@ class Service:
     def ensure_exam_jobs(self) -> None:
         """Erstellt die Klausurvorbereitung neu, sobald neue Notizen fertig sind.
 
-        Wartet, solange im Modul noch Notizen bei Anthropic laufen, damit nicht für jede
-        einzelne Vorlesung eines Stapels eine eigene Fassung entsteht.
+        Wartet, solange im Modul noch Notizen entstehen (auch wenn sie auf Budget oder
+        Freigabe warten), damit nicht für jede einzelne Vorlesung eines Stapels – etwa nach
+        „Alle Notizen neu erstellen“ – eine eigene, kostenpflichtige Fassung entsteht.
         """
         with self.db.connect() as conn:
             modules = [r["id"] for r in conn.execute("SELECT id FROM modules")]
             busy = {r["module_id"] for r in conn.execute(
                 "SELECT DISTINCT l.module_id FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
-                " WHERE (j.kind = 'notes' AND j.status = 'submitted')"
+                " WHERE (j.kind = 'notes' AND j.status IN ('estimated', 'blocked', 'submitted'))"
                 "    OR (j.kind = 'hints' AND j.status IN ('estimated', 'blocked', 'submitted'))")}
         for module_id in modules:
             if module_id in busy:

@@ -16,6 +16,10 @@
 
 <h2>Vorlesungen</h2>
 <div class="card">
+  {% if lectures and not demo %}
+  <p style="margin:0 0 12px"><a href="{{ request.state.base }}/modules/{{ module.id }}/neu-erstellen">Alle Notizen neu erstellen …</a>
+    <span class="muted">· mit Beispielen und Diagrammen, vorher siehst du die Kosten</span></p>
+  {% endif %}
   {% if lectures %}
   <table>
     <tr><th>Vorlesung</th><th>Dauer</th><th>Status</th><th>Kosten</th></tr>

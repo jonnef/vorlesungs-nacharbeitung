@@ -36,7 +36,7 @@ class Settings:
     model: str = field(default_factory=lambda: _env("CLAUDE_MODEL", "claude-opus-5"))
     effort: str = field(default_factory=lambda: _env("CLAUDE_EFFORT", "high"))
     # Deckel für Antwort inkl. Denkprozess – geht als Worst Case in die Kostenschätzung ein.
-    max_output_tokens: int = field(default_factory=lambda: int(_env("MAX_OUTPUT_TOKENS", "20000")))
+    max_output_tokens: int = field(default_factory=lambda: int(_env("MAX_OUTPUT_TOKENS", "32000")))
     # Wie viele Tokens an Skriptseiten maximal pro Vorlesung mitgeschickt werden.
     script_context_tokens: int = field(default_factory=lambda: int(_env("SCRIPT_CONTEXT_TOKENS", "60000")))
 
@@ -50,7 +50,7 @@ class Settings:
 
     # Klausurvorbereitung pro Modul (fasst alle Notizen zusammen).
     exam_effort: str = field(default_factory=lambda: _env("EXAM_EFFORT", "high"))
-    exam_max_tokens: int = field(default_factory=lambda: int(_env("EXAM_MAX_TOKENS", "16000")))
+    exam_max_tokens: int = field(default_factory=lambda: int(_env("EXAM_MAX_TOKENS", "32000")))
 
     monthly_budget_usd: float = field(default_factory=lambda: float(_env("MONTHLY_BUDGET_USD", "10")))
     # Jobs automatisch abschicken, wenn sie ins Budget passen (sonst Freigabe per Klick).

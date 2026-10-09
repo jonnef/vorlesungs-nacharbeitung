@@ -58,9 +58,24 @@ $$
 a_1 v_1 + \\dots + a_n v_n = 0 \\;\\Rightarrow\\; a_1 = \\dots = a_n = 0
 $$
 
+> [!example]- Beispiel: Sind (1, 2) und (2, 4) linear unabhängig? (eigenes Beispiel)
+> Ansatz $a_1 (1, 2) + a_2 (2, 4) = (0, 0)$ liefert $a_1 + 2a_2 = 0$ und $2a_1 + 4a_2 = 0$.
+>
+> Die zweite Gleichung ist das Doppelte der ersten, also gibt es nichttriviale Lösungen, z. B. $a_1 = 2,\\ a_2 = -1$.
+>
+> **Ergebnis:** linear abhängig – der zweite Vektor ist das Doppelte des ersten.
+
 ### Basis und Dimension
 - Eine Basis ist ein linear unabhängiges Erzeugendensystem [00:40:15] [LA_Skript S. 2]
 - Alle Basen eines Vektorraums sind gleich groß – diese Zahl ist die Dimension $\\dim V$ [00:48:00] [LA_Skript S. 2]
+
+> [!diagram]+ Vom Vektorraum zur Dimension
+> ```mermaid
+> flowchart LR
+>   V["Vektorraum V"] --> E["Erzeugendensystem"]
+>   E -->|"linear unabhängig"| B["Basis"]
+>   B -->|"Anzahl der Elemente"| D["Dimension dim V"]
+> ```
 
 ## Hinweise des Dozenten
 - Das **Austauschverfahren** kommt „garantiert in der Klausur“ [01:07:00]
@@ -113,9 +128,31 @@ $$
 \\chi_A(\\lambda) = \\det(A - \\lambda E) = 0
 $$
 
+> [!example]- Beispiel: Eigenwerte einer 2×2-Matrix (eigenes Beispiel)
+> $A = \\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}$, also
+> $\\det(A - \\lambda E) = (2-\\lambda)^2 - 1 = \\lambda^2 - 4\\lambda + 3$.
+>
+> Nullstellen: $\\lambda_1 = 1$, $\\lambda_2 = 3$.
+
+> [!proof]- Herleitung: Warum $\\det(A - \\lambda E) = 0$?
+> $A v = \\lambda v \\iff (A - \\lambda E) v = 0$.
+>
+> Es gibt genau dann ein $v \\neq 0$, wenn $A - \\lambda E$ nicht invertierbar ist, also wenn $\\det(A - \\lambda E) = 0$. [00:26:00]
+
 ### Diagonalisierbarkeit
 - $A$ ist diagonalisierbar genau dann, wenn es eine Basis aus Eigenvektoren gibt [00:50:00] [LA_Skript S. 4]
 - Dann gilt $A = S D S^{-1}$ mit Diagonalmatrix $D$ [00:50:00] [LA_Skript S. 4]
+
+> [!diagram]+ Ablauf der Diagonalisierung
+> ```mermaid
+> flowchart TD
+>   A["Matrix A"] --> P["charakteristisches Polynom aufstellen"]
+>   P --> L["Eigenwerte als Nullstellen"]
+>   L --> V["Eigenvektoren je Eigenwert"]
+>   V --> Q{"Basis aus Eigenvektoren?"}
+>   Q -->|"ja"| D["A = S D S⁻¹"]
+>   Q -->|"nein"| N["nicht diagonalisierbar"]
+> ```
 
 ## Hinweise des Dozenten
 - Typischer Fehler: Die Reihenfolge der Eigenvektoren in $S$ muss zu den Eigenwerten in $D$ passen [01:05:00]
@@ -173,11 +210,42 @@ $$
 ## Typische Fehler
 - Reihenfolge der Eigenvektoren in $S$ passt nicht zu den Eigenwerten in $D$ [V2 01:05:00]
 
-## Übungsfragen
-1. Wann sind Vektoren linear unabhängig? Geben Sie die Definition an. [V1 00:21:00]
-2. Warum haben alle Basen eines Vektorraums gleich viele Elemente? [V1 00:48:00]
-3. Wie berechnet man die Eigenwerte einer $2 \\times 2$-Matrix? [V2 00:25:00]
-4. Unter welcher Bedingung ist eine Matrix diagonalisierbar? [V2 00:50:00]
+## Übungsaufgaben im Stil des Dozenten
+
+### Aufgabe 1: Lineare Unabhängigkeit
+*Schwierigkeit: leicht · Quelle: [V1 00:21:00] [LA_Skript S. 2]*
+
+Prüfen Sie, ob die Vektoren $(1, 0, 1)$, $(0, 1, 1)$ und $(1, 1, 2)$ linear unabhängig sind. Begründen Sie Ihre Antwort.
+
+> [!hint]- Tipp
+> Schauen Sie, ob sich ein Vektor als Summe der anderen schreiben lässt.
+
+> [!solution]- Musterlösung
+> $(1, 0, 1) + (0, 1, 1) = (1, 1, 2)$, also ist $1 \\cdot v_1 + 1 \\cdot v_2 - 1 \\cdot v_3 = 0$ eine nichttriviale Linearkombination.
+>
+> **Ergebnis:** linear abhängig. [V1 00:21:00]
+
+### Aufgabe 2: Eigenwerte und Diagonalisierung
+*Schwierigkeit: mittel · Quelle: [V2 00:25:00] [V2 00:50:00]*
+
+Gegeben ist $A = \\begin{pmatrix} 4 & 1 \\\\ 2 & 3 \\end{pmatrix}$.
+
+a) Berechnen Sie die Eigenwerte von $A$.
+
+b) Ist $A$ diagonalisierbar? Begründen Sie.
+
+> [!solution]- Musterlösung
+> a) $\\det(A - \\lambda E) = (4-\\lambda)(3-\\lambda) - 2 = \\lambda^2 - 7\\lambda + 10 = (\\lambda - 2)(\\lambda - 5)$, also $\\lambda_1 = 2$, $\\lambda_2 = 5$. [V2 00:25:00]
+>
+> b) Zwei verschiedene Eigenwerte einer $2 \\times 2$-Matrix liefern zwei linear unabhängige Eigenvektoren – es gibt eine Basis aus Eigenvektoren, $A$ ist diagonalisierbar. [V2 00:50:00]
+
+## Kurzfragen
+
+> [!question]- Warum haben alle Basen eines Vektorraums gleich viele Elemente?
+> Das folgt aus dem Austauschverfahren: Man kann Basisvektoren schrittweise austauschen, ohne die Anzahl zu ändern. Diese Anzahl ist die Dimension. [V1 00:48:00]
+
+> [!question]- Worauf muss man bei $S$ und $D$ achten?
+> Die $i$-te Spalte von $S$ muss ein Eigenvektor zum $i$-ten Diagonaleintrag von $D$ sein. [V2 01:05:00]
 
 ## Checkliste
 - [ ] Definition lineare Unabhängigkeit
@@ -257,6 +325,19 @@ def seed_if_empty(db: Database) -> None:
     finally:
         seed_hints_if_missing(db)
         seed_exam_if_missing(db)
+        refresh_sample_texts(db)
+
+
+def refresh_sample_texts(db: Database) -> None:
+    """Bringt Notizen und Klausurvorbereitung bestehender Vorschau-Datenbanken auf den aktuellen Stand."""
+    with db.connect() as conn:
+        for lec in LECTURES:
+            conn.execute(
+                "UPDATE jobs SET notes_md = ? WHERE kind = 'notes' AND model = 'Beispiel'"
+                " AND lecture_id IN (SELECT id FROM lectures WHERE title = ?)",
+                (lec["notes"], lec["title"]),
+            )
+        conn.execute("UPDATE jobs SET notes_md = ? WHERE kind = 'exam' AND model = 'Beispiel'", (EXAM,))
 
 
 def _seed_module(db: Database) -> None:

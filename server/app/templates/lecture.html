@@ -33,6 +33,10 @@
   {% endif %}
 </div>
 
+{% if newer_pending %}
+<div class="card muted">Eine neue Fassung dieser Notizen wird gerade erstellt – bis sie fertig ist, siehst du die bisherige.</div>
+{% endif %}
+
 {% if warnings %}
 <div class="card warn">
   <strong>Bitte prüfen:</strong>

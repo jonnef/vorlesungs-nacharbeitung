@@ -208,13 +208,26 @@ def api_lecture(lecture_id: int):
     lec = _get("SELECT l.id, l.title, m.name AS module FROM lectures l"
                " JOIN modules m ON m.id = l.module_id WHERE l.id = ?", lecture_id)
     job = service.latest_job(lecture_id) or {}
+    notes = service.latest_notes(lecture_id) or {}
     return {
         **lec,
         "status": job.get("status", "none"),
-        "notes_md": job.get("notes_md"),
-        "warnings": json.loads(job.get("warnings_json") or "[]"),
+        # Neueste fertige Fassung – auch während eine neue entsteht.
+        "notes_md": notes.get("notes_md"),
+        "notes_job_id": notes.get("id"),
+        "warnings": json.loads(notes.get("warnings_json") or "[]"),
         "error": job.get("error"),
     }
+
+
+@app.get("/api/modules/{module_name}/notes-versions", dependencies=[Depends(api_auth)])
+def api_notes_versions(module_name: str):
+    """Je Vorlesung die ID der neuesten fertigen Notizen – der Mac erkennt daran neue Fassungen."""
+    rows = _all(
+        "SELECT l.id, (SELECT MAX(j.id) FROM jobs j WHERE j.lecture_id = l.id AND j.kind = 'notes'"
+        " AND j.status = 'done' AND j.notes_md IS NOT NULL) AS notes_job_id"
+        " FROM lectures l JOIN modules m ON m.id = l.module_id WHERE m.name = ?", module_name)
+    return {str(r["id"]): r["notes_job_id"] for r in rows}
 
 
 @app.get("/api/modules/{module_name}/glossary", dependencies=[Depends(api_auth)])
@@ -285,6 +298,24 @@ def module_page(request: Request, module_id: int):
         "exam": service.module_exam(module_id),
         "hint_count": len(service.module_hints(module_id)),
         "hints_status": service.hints_status(module_id)})
+
+
+@app.get("/modules/{module_id}/neu-erstellen", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def regenerate_confirm(request: Request, module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    return templates.TemplateResponse(request, "regenerate.html", {
+        "module": module, "plan": service.regeneration_plan(module_id), "b": _budget()})
+
+
+@app.post("/modules/{module_id}/neu-erstellen", dependencies=[Depends(web_auth)])
+def regenerate_module(request: Request, module_id: int):
+    _get("SELECT id FROM modules WHERE id = ?", module_id)
+    try:
+        service.regenerate_module(module_id)
+    except anthropic.APIError as e:
+        log.error("Neu erstellen für Modul %s abgebrochen: %s", module_id, api_error_text(e))
+        raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
+    return _redirect(request, f"/modules/{module_id}")
 
 
 @app.get("/modules/{module_id}/pruefungshinweise", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
@@ -374,14 +405,16 @@ def upload_scripts(request: Request, module_id: int, files: list[UploadFile] = F
 def slide_image(module_id: int, kuerzel: str, label: str):
     """Seite aus dem Dozenten-PDF als Bild – für die Seitenangaben [Kürzel S. 12] in den Notizen."""
     row = _get(
-        "SELECT s.id, s.sha256, s.filename, p.page_index FROM scripts s JOIN pages p ON p.script_id = s.id"
+        "SELECT s.id, s.sha256, s.filename, p.page_index, p.text FROM scripts s JOIN pages p ON p.script_id = s.id"
         " WHERE s.module_id = ? AND s.kuerzel = ? AND p.label = ? ORDER BY p.page_index LIMIT 1",
         module_id, kuerzel, label,
     )
+    cache = settings.data_dir / "folien" / str(row["id"]) / f"{row['page_index']}.png"
+    if settings.demo_mode and row["sha256"] == "beispiel":  # Vorschau: Folie aus dem Beispieltext
+        return FileResponse(slides.text_png(f"{kuerzel} · Seite {label}", row["text"], cache), media_type="image/png")
     pdf = settings.upload_dir / str(module_id) / f"{row['sha256'][:12]}_{row['filename']}"
     if not pdf.exists():
         raise HTTPException(404, "Das PDF liegt nicht mehr auf dem Server.")
-    cache = settings.data_dir / "folien" / str(row["id"]) / f"{row['page_index']}.png"
     try:
         png = slides.page_png(pdf, row["page_index"], cache)
     except Exception as e:  # kaputte oder verschlüsselte PDFs
@@ -395,19 +428,21 @@ def lecture_page(request: Request, lecture_id: int):
     lec = _get("SELECT l.*, m.name AS module FROM lectures l JOIN modules m ON m.id = l.module_id"
                " WHERE l.id = ?", lecture_id)
     job = service.latest_job(lecture_id)
-    notes_html = render_notes(job["notes_md"]) if job and job.get("notes_md") else None
-    warnings = json.loads(job["warnings_json"]) if job and job.get("warnings_json") else []
+    notes = service.latest_notes(lecture_id)
+    notes_html = render_notes(notes["notes_md"]) if notes else None
+    warnings = json.loads(notes["warnings_json"]) if notes and notes.get("warnings_json") else []
     segments = json.loads(lec.pop("segments_json"))
     return templates.TemplateResponse(request, "lecture.html", {
-        "lec": lec, "job": job, "notes_html": notes_html, "warnings": warnings,
+        "lec": lec, "job": job, "notes": notes, "notes_html": notes_html, "warnings": warnings,
+        "newer_pending": bool(job and notes and job["id"] != notes["id"]),
         "segments": segments, "b": _budget()})
 
 
 @app.get("/lectures/{lecture_id}/notizen.md", response_class=PlainTextResponse,
          dependencies=[Depends(web_auth)])
 def lecture_notes_md(lecture_id: int):
-    job = service.latest_job(lecture_id)
-    if not job or not job.get("notes_md"):
+    job = service.latest_notes(lecture_id)
+    if not job:
         raise HTTPException(404, "Noch keine Notizen")
     title = _get("SELECT title FROM lectures WHERE id = ?", lecture_id)["title"]
     filename = quote(f"{title}.md")  # RFC 5987, damit Umlaute im Dateinamen funktionieren

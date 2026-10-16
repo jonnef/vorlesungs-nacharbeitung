@@ -132,6 +132,11 @@ mit dem neuen Material erneut (die aktualisierte Fassung landet auch wieder in i
 - **Folien:** Ein Klick auf eine Seitenangabe wie `[Skript S. 12]` blendet die Seite aus dem
   Dozenten-PDF ein (der Pi rendert sie einmal und speichert sie zwischen).
 - In den Markdown-Dateien stehen die Kästen in Obsidian-Schreibweise (`> [!example]- …`).
+- **Suche:** Auf jeder Modulseite durchsucht das Suchfeld die Notizen aller Vorlesungen
+  (Groß-/Kleinschreibung egal, `ae`/`oe`/`ue`/`ss` finden auch Umlaute, `"…"` sucht eine Phrase,
+  mehrere Wörter müssen im selben Abschnitt stehen). Auf Wunsch auch in den Transkripten. Ein Klick
+  auf einen Treffer öffnet die Vorlesung mit allen Treffern markiert, unten rechts kann man von
+  Treffer zu Treffer springen.
 
 **Alle Notizen eines Moduls neu erstellen:** Modul → „Alle Notizen neu erstellen …“ zeigt vorher
 erwartete und höchste Kosten (etwa 0,35–0,55 $ pro Vorlesung). Bis die neuen Fassungen fertig sind,

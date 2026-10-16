@@ -78,6 +78,19 @@
   .kind-klausurrelevant { color:var(--ok); } .kind-nicht_klausurrelevant { color:var(--muted); }
   .kind-pruefungsformat { color:var(--accent); } .kind-typischer_fehler { color:var(--warn); }
   .hint blockquote { margin:10px 0; padding:4px 14px; border-left:3px solid var(--line); font-size:1.05em; }
+  .search-form { display:flex; gap:8px; margin:12px 0; }
+  .search-form input[type=search] { flex:1; font:inherit; padding:8px 12px; border-radius:8px;
+          border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  .search-result .hit-block { margin:10px 0; }
+  .search-result .hit-section { font-weight:600; font-size:15px; }
+  .search-result .hit-line { font-size:15px; margin:3px 0 0 12px; color:var(--fg); }
+  .search-result .ts { font-family:ui-monospace, monospace; font-size:13px; text-decoration:none; }
+  mark { background:color-mix(in srgb, #facc15 55%, transparent); color:inherit; border-radius:3px; padding:0 1px; }
+  mark.current { outline:2px solid var(--accent); }
+  .search-nav { position:fixed; right:16px; bottom:16px; z-index:10; display:flex; gap:6px; align-items:center;
+          background:var(--card); border:1px solid var(--line); border-radius:10px; padding:6px 10px;
+          box-shadow:0 4px 16px rgba(0,0,0,.15); font-size:14px; }
+  .search-nav button { padding:2px 10px; }
   .hint .meta { font-size:14px; display:flex; flex-wrap:wrap; gap:4px 12px; align-items:center; }
 </style>
 </head>

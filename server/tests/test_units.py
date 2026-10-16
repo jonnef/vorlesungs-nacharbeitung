@@ -92,3 +92,33 @@ def test_render_callouts_fold_and_nest():
     assert "&gt; [!note] kein Callout im Code" in html
     assert '<details class="callout callout-diagram" open>' in html and 'class="language-mermaid"' in html
     assert "<p>Vorher</p>" in html
+
+
+def test_search_notes_sections_umlauts_and_phrases():
+    from app import search
+
+    notes = ("# VL\n\n## Themen\n\n### Eigenwerte\n- $\\lambda$ ist **Eigenwert**, wenn $Av = \\lambda v$ [00:05:00]\n"
+             "\n> [!example]- Beispiel: Größe der Matrix\n> Die Matrix ist quadratisch.\n"
+             "\n> [!diagram]+ Ablauf\n> ```mermaid\n> flowchart TD; A[\"Eigenwert\"]-->B\n> ```\n"
+             "\n### Basis\n- Eine Basis ist linear unabhängig\n")
+    hits = search.search_notes(notes, search.terms("eigenwert"))
+    assert [h["section"] for h in hits] == ["Themen › Eigenwerte"]
+    assert hits[0]["lines"] == ['<span class="math inline">\\lambda</span> ist <mark>Eigenwert</mark>, wenn '
+                                '<span class="math inline">Av = \\lambda v</span> [00:05:00]']
+    assert search.search_notes(notes, search.terms("lambda")) == []  # LaTeX-Befehle zählen nicht
+    # ae/oe/ue/ss finden Umlaute, Groß-/Kleinschreibung egal
+    assert search.search_notes(notes, search.terms("GROESSE"))[0]["lines"] == [
+        "Beispiel: <mark>Größe</mark> der Matrix"]
+    # Mehrere Wörter: alle im selben Abschnitt; Phrase zusammenhängend
+    assert search.search_notes(notes, search.terms("basis eigenwert")) == []
+    assert len(search.search_notes(notes, search.terms('"linear unabhängig"'))) == 1
+    assert search.search_notes(notes, search.terms('"unabhängig linear"')) == []
+
+
+def test_search_transcript_blocks():
+    from app import search
+
+    segs = [{"start": 0.0, "end": 5.0, "text": "Heute Eigenwerte."},
+            {"start": 65.0, "end": 70.0, "text": "Das kommt in der Prüfung."}]
+    hits = search.search_transcript(segs, search.terms("pruefung"))
+    assert hits == [{"seconds": 65, "ts": "00:01:05", "text": "Das kommt in der <mark>Prüfung</mark>."}]

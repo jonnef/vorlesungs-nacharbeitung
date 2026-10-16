@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Suche – {{ module.name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="{{ request.state.base }}/modules/{{ module.id }}">{{ module.name }}</a></p>
+<h1>Suche</h1>
+{% include "_search_form.html" %}
+
+{% if searched %}
+<p class="muted">{{ total }} Treffer in {{ results|length }} Vorlesung{{ "en" if results|length != 1 }}
+  {%- if not transkript %} · <a href="?q={{ q|urlencode }}&amp;transkript=1">auch in den Transkripten suchen</a>{% endif %}</p>
+{% for lec in results %}
+<div class="card search-result">
+  <h2 style="margin-top:0"><a href="{{ request.state.base }}/lectures/{{ lec.id }}?q={{ q|urlencode }}">{{ lec.title }}</a></h2>
+  {% for hit in lec.notes %}
+  <div class="hit-block">
+    <a class="hit-section" href="{{ request.state.base }}/lectures/{{ lec.id }}?q={{ q|urlencode }}&amp;s={{ (hit.section.split(' › ')|last)|urlencode }}">{{ hit.section or "Notizen" }}</a>
+    {% for line in hit.lines %}<div class="hit-line">{{ line|safe }}</div>{% endfor %}
+  </div>
+  {% endfor %}
+  {% if lec.transcript %}
+  <div class="hit-block">
+    <span class="muted">Im Transkript:</span>
+    {% for t in lec.transcript %}
+    <div class="hit-line"><a class="ts" href="{{ request.state.base }}/lectures/{{ lec.id }}#t-{{ t.seconds }}">[{{ t.ts }}]</a> {{ t.text|safe }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card muted">Nichts gefunden{% if not transkript %} – vielleicht kommt es nur im <a href="?q={{ q|urlencode }}&amp;transkript=1">Transkript</a> vor{% endif %}.</div>
+{% endfor %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+  if (window.katex) document.querySelectorAll(".search-result .math").forEach(function (el) {
+    try { katex.render(el.textContent, el, { throwOnError: false }); } catch (e) {}
+  });
+</script>
+{% endif %}
+{% endblock %}

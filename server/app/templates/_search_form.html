@@ -1,0 +1,5 @@
+<form class="search-form" method="get" action="{{ request.state.base }}/modules/{{ module.id }}/suche">
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="In allen Notizen suchen … (z. B. Eigenwert, &quot;lineare Abbildung&quot;)" aria-label="Suchbegriff" required>
+  {% if transkript %}<input type="hidden" name="transkript" value="1">{% endif %}
+  <button>Suchen</button>
+</form>

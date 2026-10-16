@@ -61,3 +61,14 @@ def test_slide_image_from_uploaded_pdf(client, sample_pdf):
     assert client.get("/modules/1/folie/Skript/2.png").content == r.content  # aus dem Zwischenspeicher
     assert client.get("/modules/1/folie/Skript/99.png").status_code == 404
     assert client.get("/modules/1/folie/Gibtsnicht/1.png").status_code == 404
+
+
+def test_module_search_page(client, fake_client):
+    lecture = _post_lecture(client, "VL01.mp4").json()["lecture_id"]
+    _finish_all(fake_client)
+    page = client.get("/modules/1/suche", params={"q": "punkt"})  # Notizen: „- Punkt [00:00:10] …“
+    assert page.status_code == 200 and "<mark>" in page.text and f"/lectures/{lecture}?q=" in page.text
+    page = client.get("/modules/1/suche", params={"q": "eigenwerte", "transkript": 1})
+    assert "Im Transkript" in page.text
+    assert "Nichts gefunden" in client.get("/modules/1/suche", params={"q": "xyzxyz"}).text
+    assert 'name="q"' in client.get("/modules/1").text

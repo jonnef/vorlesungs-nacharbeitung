@@ -2,6 +2,7 @@
 {% block title %}{{ module.name }}{% endblock %}
 {% block content %}
 <h1>{{ module.name }}</h1>
+{% with q = "", transkript = false %}{% include "_search_form.html" %}{% endwith %}
 <p><a href="{{ request.state.base }}/modules/{{ module.id }}/glossar">Glossar</a>
   <span class="muted">· {{ glossary_count }} Einträge aus {{ glossary_status.lectures }} Vorlesungen
   {%- if glossary_status.pending %} · {{ glossary_status.pending }} in Arbeit{% endif %}</span></p>

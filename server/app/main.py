@@ -18,7 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import demo, exam, glossary, hints, slides
+from . import demo, exam, glossary, hints, search, slides
 from .config import settings
 from .db import Database
 from .render import render_inline, render_notes
@@ -298,6 +298,28 @@ def module_page(request: Request, module_id: int):
         "exam": service.module_exam(module_id),
         "hint_count": len(service.module_hints(module_id)),
         "hints_status": service.hints_status(module_id)})
+
+
+@app.get("/modules/{module_id}/suche", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def search_page(request: Request, module_id: int, q: str = "", transkript: bool = False):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    needles = search.terms(q)
+    results, total = [], 0
+    if needles:
+        lectures = _all("SELECT id, title, segments_json FROM lectures WHERE module_id = ? ORDER BY source_filename",
+                        module_id)
+        for lec in lectures:
+            notes = service.latest_notes(lec["id"])
+            note_hits = search.search_notes(notes["notes_md"], needles) if notes else []
+            transcript_hits = (search.search_transcript(json.loads(lec["segments_json"]), needles)
+                               if transkript else [])
+            if note_hits or transcript_hits:
+                results.append({"id": lec["id"], "title": lec["title"], "notes": note_hits,
+                                "transcript": transcript_hits})
+                total += len(note_hits) + len(transcript_hits)
+    return templates.TemplateResponse(request, "search.html", {
+        "module": module, "q": q, "transkript": transkript, "results": results, "total": total,
+        "searched": bool(needles), "b": _budget()})
 
 
 @app.get("/modules/{module_id}/neu-erstellen", response_class=HTMLResponse, dependencies=[Depends(web_auth)])

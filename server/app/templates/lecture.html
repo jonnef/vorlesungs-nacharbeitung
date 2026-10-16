@@ -49,6 +49,83 @@
   <button type="button" class="secondary" data-close>Alles zuklappen</button></div>
 <article class="card notes">{{ notes_html|safe }}</article>
 {% set module_id = lec.module_id %}{% include "_notes_assets.html" %}
+<div class="search-nav" hidden><span></span>
+  <button type="button" class="secondary" data-prev aria-label="Vorheriger Treffer">‹</button>
+  <button type="button" class="secondary" data-next aria-label="Nächster Treffer">›</button>
+  <button type="button" class="secondary" data-clear aria-label="Markierungen entfernen">✕</button></div>
+<script>
+  // Aus der Modul-Suche (?q=…&s=Abschnitt): Treffer markieren, Abschnitt aufklappen, hinspringen.
+  (function () {
+    var params = new URLSearchParams(location.search), q = params.get("q");
+    var article = document.querySelector("article.notes");
+    if (!q || !article) return;
+    var alt = { "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss" };
+    function pattern(term) {
+      var t = term.toLowerCase().replace(/ä|ö|ü|ß/g, function (c) { return alt[c]; });
+      t = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return t.replace(/ae|oe|ue|ss/g, function (p) {
+        var umlaut = { ae: "ä", oe: "ö", ue: "ü", ss: "ß" }[p];
+        return "(?:" + p + "|" + umlaut + ")";
+      });
+    }
+    var terms = [], m, re = /"([^"]+)"|(\S+)/g;
+    while ((m = re.exec(q))) terms.push(pattern((m[1] || m[2]).trim()));
+    if (!terms.length) return;
+    var rx = new RegExp(terms.join("|"), "gi");
+    var walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (n) {
+        return n.parentNode.closest(".katex, svg, script, .mermaid-box, button.page") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    var marks = [];
+    nodes.forEach(function (node) {
+      var text = node.nodeValue, last = 0, frag = null;
+      text.replace(rx, function (match, offset) {
+        frag = frag || document.createDocumentFragment();
+        frag.appendChild(document.createTextNode(text.slice(last, offset)));
+        var mark = document.createElement("mark");
+        mark.textContent = match;
+        frag.appendChild(mark);
+        marks.push(mark);
+        last = offset + match.length;
+      });
+      if (frag) {
+        frag.appendChild(document.createTextNode(text.slice(last)));
+        node.parentNode.replaceChild(frag, node);
+      }
+    });
+    if (!marks.length) return;
+    var nav = document.querySelector(".search-nav"), label = nav.querySelector("span"), index = 0;
+    function show(i) {
+      index = (i + marks.length) % marks.length;
+      marks.forEach(function (mk) { mk.classList.remove("current"); });
+      var mk = marks[index];
+      for (var d = mk.closest("details"); d; d = d.parentNode.closest("details")) d.open = true;
+      mk.classList.add("current");
+      mk.scrollIntoView({ block: "center" });
+      label.textContent = (index + 1) + " / " + marks.length + " Treffer";
+    }
+    var section = params.get("s"), start = 0;
+    if (section) {
+      article.querySelectorAll("h1, h2, h3").forEach(function (h) {
+        if (h.textContent.trim() !== section.trim() || start) return;
+        var box = h.closest("details.section") || article;
+        var first = marks.findIndex(function (mk) { return box.contains(mk); });
+        if (first >= 0) start = first;
+      });
+    }
+    nav.hidden = false;
+    nav.querySelector("[data-prev]").onclick = function () { show(index - 1); };
+    nav.querySelector("[data-next]").onclick = function () { show(index + 1); };
+    nav.querySelector("[data-clear]").onclick = function () {
+      marks.forEach(function (mk) { mk.replaceWith(document.createTextNode(mk.textContent)); });
+      nav.hidden = true;
+    };
+    show(start);
+  })();
+</script>
 {% endif %}
 
 <details class="card" id="transkript">

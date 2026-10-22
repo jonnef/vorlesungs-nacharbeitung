@@ -7,6 +7,8 @@ Ordnerstruktur (iCloud Drive/Dokumente/Studium):
       <Modul>/          ← heruntergeladene Vorlesungsvideos
     <Modul>/            ← dein vorhandener Modulordner
       Skripte/          ← PDFs des Dozenten (werden auf den Pi hochgeladen)
+      Vorlesungsfolien/ ← bemalte Folien einzelner Vorlesungen, z. B. „VL03 Folien.pdf“
+                          (nur zum Anzeigen; Zuordnung über Nummer oder Datum im Namen)
       Transkripte/      ← legt der Watcher an (JSON mit Zeitstempeln)
       Notizen/          ← legt der Watcher an (fertige Markdown-Notizen)
       Glossar.md        ← legt der Watcher an (wächst mit jeder Vorlesung)
@@ -40,6 +42,7 @@ ICLOUD = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"
 STUDIUM = Path(os.environ.get("VORLESUNG_STUDIUM", ICLOUD / "Documents/Studium")).expanduser()
 ROOT = STUDIUM / "Vorlesungen"
 SKRIPTE = os.environ.get("VORLESUNG_SKRIPTE", "Skripte")
+FOLIEN = "Vorlesungsfolien"  # bemalte Folien einzelner Vorlesungen (nur zum Anzeigen)
 SERVER = os.environ.get("VORLESUNG_SERVER", "http://raspberrypi.local:8000").rstrip("/")
 TOKEN = os.environ.get("VORLESUNG_TOKEN", "")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
@@ -81,13 +84,13 @@ def quote(s: str) -> str:
     return urllib.parse.quote(s, safe="")
 
 
-def upload_pdf(module: str, path: Path) -> dict:
+def upload_pdf(module: str, path: Path, endpoint: str = "scripts") -> dict:
     boundary = uuid.uuid4().hex
     body = (
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
         f"filename=\"{path.name}\"\r\nContent-Type: application/pdf\r\n\r\n"
     ).encode() + path.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
-    return api("POST", f"/api/modules/{quote(module)}/scripts", body,
+    return api("POST", f"/api/modules/{quote(module)}/{endpoint}", body,
                f"multipart/form-data; boundary={boundary}")
 
 
@@ -225,6 +228,28 @@ def process_module(video_dir: Path, state: dict, allow_transcribe: bool) -> bool
         res = upload_pdf(module, pdf)
         log.info("Skript %s: %s", pdf.name, "hochgeladen" if res["created"] else "war schon vorhanden")
         state["scripts"][f"{module}/{pdf.name}"] = digest
+        save_state(state)
+
+    # Bemalte Folien aus einzelnen Vorlesungen: nur zum Anzeigen, der Pi ordnet sie über den
+    # Dateinamen (VL03, Datum …) der Vorlesung zu.
+    slides_dir = module_dir / FOLIEN
+    for pdf in sorted(slides_dir.glob("*")) if slides_dir.is_dir() else []:
+        if is_placeholder(pdf):
+            request_download(pdf)
+            continue
+        if pdf.suffix.lower() != ".pdf" or not is_stable(pdf):
+            continue
+        digest = hashlib.sha256(pdf.read_bytes()).hexdigest()
+        key = f"{module}/{pdf.name}"
+        if state.setdefault("lecture_slides", {}).get(key) == digest:
+            continue
+        res = upload_pdf(module, pdf, "lecture-slides")
+        if res.get("lecture_title"):
+            log.info("Folien %s → Vorlesung „%s“", pdf.name, res["lecture_title"])
+        else:
+            log.warning("Folien %s: keiner Vorlesung zuordenbar – bitte in der Web-App beim Modul zuordnen "
+                        "(oder Nummer/Datum der Vorlesung in den Dateinamen schreiben)", pdf.name)
+        state["lecture_slides"][key] = digest
         save_state(state)
 
     transcribed = False

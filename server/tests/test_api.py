@@ -13,7 +13,8 @@ def client(fake_client):
     main.service._client = fake_client
     main.settings.monthly_budget_usd = 5.0
     with main.service.db.connect() as conn:
-        for table in ("usage_log", "jobs", "lectures", "pages", "scripts", "modules"):
+        for table in ("usage_log", "jobs", "lecture_slide_pages", "lecture_slides", "lectures", "pages", "scripts",
+                      "modules"):
             conn.execute(f"DELETE FROM {table}")
     with TestClient(main.app) as c:
         yield c

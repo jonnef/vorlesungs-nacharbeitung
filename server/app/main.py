@@ -145,6 +145,14 @@ def _add_script(module_id: int, upload: UploadFile) -> tuple[int, bool]:
         tmp.unlink(missing_ok=True)
 
 
+def _add_lecture_slides(module_id: int, upload: UploadFile, lecture_id: int | None = None) -> dict:
+    tmp = _save_upload(upload)
+    try:
+        return service.add_lecture_slides(module_id, upload.filename or "Folien.pdf", tmp, lecture_id)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _create_job(lecture_id: int) -> int:
     try:
         return service.create_job(lecture_id)
@@ -191,6 +199,17 @@ def api_upload_script(module_name: str, file: UploadFile = File(...)):
     module_id = service.get_or_create_module(module_name)
     script_id, created = _add_script(module_id, file)
     return {"script_id": script_id, "created": created}
+
+
+@app.post("/api/modules/{module_name}/lecture-slides", dependencies=[Depends(api_auth)])
+def api_upload_lecture_slides(module_name: str, file: UploadFile = File(...)):
+    """Bemalte Folien aus einer Vorlesung; die Vorlesung ergibt sich aus dem Dateinamen."""
+    module_id = service.get_or_create_module(module_name)
+    res = _add_lecture_slides(module_id, file)
+    title = None
+    if res["lecture_id"]:
+        title = _get("SELECT title FROM lectures WHERE id = ?", res["lecture_id"])["title"]
+    return {**res, "lecture_title": title}
 
 
 @app.post("/api/modules/{module_name}/lectures", dependencies=[Depends(api_auth)])
@@ -296,6 +315,7 @@ def module_page(request: Request, module_id: int):
         "glossary_count": len(service.module_glossary(module_id)),
         "glossary_status": service.glossary_status(module_id),
         "exam": service.module_exam(module_id),
+        "open_slides": service.lecture_slides_of(module_id=module_id),
         "hint_count": len(service.module_hints(module_id)),
         "hints_status": service.hints_status(module_id)})
 
@@ -445,6 +465,59 @@ def slide_image(module_id: int, kuerzel: str, label: str):
     return FileResponse(png, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
 
 
+@app.get("/lectures/{lecture_id}/folie/{kuerzel}/{label}.png", dependencies=[Depends(web_auth)])
+def annotated_slide_image(lecture_id: int, kuerzel: str, label: str):
+    """Die bemalte Fassung der Skriptseite aus dieser Vorlesung (404, wenn es keine gibt)."""
+    page = service.annotated_page(lecture_id, kuerzel, label)
+    if not page:
+        raise HTTPException(404, "Keine bemalte Folie zu dieser Seite.")
+    pdf = service.lecture_slides_path(page)
+    if not pdf.exists():
+        raise HTTPException(404, "Das PDF liegt nicht mehr auf dem Server.")
+    cache = settings.data_dir / "folien-vorlesung" / str(page["slide_id"]) / f"{page['page_index']}.png"
+    try:
+        png = slides.page_png(pdf, page["page_index"], cache)
+    except Exception as e:
+        log.warning("Bemalte Folie %s S. %s nicht darstellbar: %s", kuerzel, label, e)
+        raise HTTPException(404, "Diese Seite lässt sich nicht als Bild darstellen.") from e
+    return FileResponse(png, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
+
+
+@app.get("/vorlesungsfolien/{slide_id}.pdf", dependencies=[Depends(web_auth)])
+def lecture_slides_pdf(slide_id: int):
+    row = _get("SELECT * FROM lecture_slides WHERE id = ?", slide_id)
+    path = service.lecture_slides_path(row)
+    if not path.exists():
+        raise HTTPException(404, "Das PDF liegt nicht mehr auf dem Server.")
+    return FileResponse(path, media_type="application/pdf", filename=row["filename"],
+                        content_disposition_type="inline")
+
+
+@app.post("/lectures/{lecture_id}/vorlesungsfolien", dependencies=[Depends(web_auth)])
+def upload_lecture_slides(request: Request, lecture_id: int, files: list[UploadFile] = File(...)):
+    lec = _get("SELECT id, module_id FROM lectures WHERE id = ?", lecture_id)
+    for f in files:
+        _add_lecture_slides(lec["module_id"], f, lecture_id)
+    return _redirect(request, f"/lectures/{lecture_id}")
+
+
+@app.post("/vorlesungsfolien/{slide_id}/zuordnen", dependencies=[Depends(web_auth)])
+def assign_lecture_slides(request: Request, slide_id: int, lecture_id: str = Form(""), back: str = Form("/")):
+    row = _get("SELECT * FROM lecture_slides WHERE id = ?", slide_id)
+    target = int(lecture_id) if lecture_id else None
+    if target is not None:
+        _get("SELECT id FROM lectures WHERE id = ? AND module_id = ?", target, row["module_id"])
+    service.assign_lecture_slides(slide_id, target)
+    return _redirect(request, back if back.startswith("/") and not back.startswith("//") else "/")
+
+
+@app.post("/vorlesungsfolien/{slide_id}/loeschen", dependencies=[Depends(web_auth)])
+def delete_lecture_slides(request: Request, slide_id: int, back: str = Form("/")):
+    _get("SELECT id FROM lecture_slides WHERE id = ?", slide_id)
+    service.delete_lecture_slides(slide_id)
+    return _redirect(request, back if back.startswith("/") and not back.startswith("//") else "/")
+
+
 @app.get("/lectures/{lecture_id}", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
 def lecture_page(request: Request, lecture_id: int):
     lec = _get("SELECT l.*, m.name AS module FROM lectures l JOIN modules m ON m.id = l.module_id"
@@ -457,6 +530,7 @@ def lecture_page(request: Request, lecture_id: int):
     return templates.TemplateResponse(request, "lecture.html", {
         "lec": lec, "job": job, "notes": notes, "notes_html": notes_html, "warnings": warnings,
         "newer_pending": bool(job and notes and job["id"] != notes["id"]),
+        "lecture_slides": service.lecture_slides_of(lecture_id=lecture_id),
         "segments": segments, "b": _budget()})
 
 

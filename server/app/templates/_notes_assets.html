@@ -31,6 +31,8 @@
   .notes figure.slide { margin:.6em 0; }
   .notes figure.slide img { display:block; max-width:100%; border:1px solid var(--line); border-radius:6px; background:#fff; }
   .notes figure.slide figcaption { font-size:13px; color:var(--muted); margin-top:4px; }
+  .notes figure.slide .slide-drawn { margin-bottom:12px; }
+  .notes figure.slide .slide-drawn img { border-color:var(--accent); }
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -39,6 +41,7 @@
   var article = document.querySelector("article.notes");
   if (!article) return;
   var base = {{ request.state.base|tojson }}, moduleId = {{ module_id|tojson }};
+  var lectureId = {{ (lecture_id if lecture_id is defined else none)|tojson }};
 
   // Formeln ($…$ und $$…$$) setzen; ohne Internet bleibt der LaTeX-Quelltext sichtbar.
   if (window.katex) {
@@ -139,6 +142,23 @@
     var fig = document.createElement("figure");
     fig.className = "slide";
     fig.dataset.id = id;
+    var path = "/folie/" + encodeURIComponent(btn.dataset.k) + "/" + encodeURIComponent(btn.dataset.p) + ".png";
+    if (lectureId !== null) {
+      // Bemalte Fassung aus dieser Vorlesung zuerst – erscheint nur, wenn es eine gibt.
+      var drawn = document.createElement("div");
+      drawn.className = "slide-drawn";
+      drawn.hidden = true;
+      var dimg = document.createElement("img");
+      dimg.alt = btn.textContent + " aus der Vorlesung";
+      dimg.src = base + "/lectures/" + lectureId + path;
+      dimg.onload = function () { drawn.hidden = false; };
+      dimg.onerror = function () { drawn.remove(); };
+      var dcap = document.createElement("figcaption");
+      dcap.textContent = "Aus der Vorlesung (mit Anmerkungen)";
+      drawn.appendChild(dimg);
+      drawn.appendChild(dcap);
+      fig.appendChild(drawn);
+    }
     var img = document.createElement("img");
     img.alt = btn.textContent;
     img.loading = "lazy";

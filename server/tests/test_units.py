@@ -122,3 +122,24 @@ def test_search_transcript_blocks():
             {"start": 65.0, "end": 70.0, "text": "Das kommt in der Prüfung."}]
     hits = search.search_transcript(segs, search.terms("pruefung"))
     assert hits == [{"seconds": 65, "ts": "00:01:05", "text": "Das kommt in der <mark>Prüfung</mark>."}]
+
+
+def test_lecture_order_by_date_number_or_arrival():
+    from app import ordering
+
+    by_date = [{"source_filename": "LA 21.10.2026.mp4", "created_at": "2026-10-01"},
+               {"source_filename": "LA 2026-10-07.mp4", "created_at": "2026-10-20"},
+               {"source_filename": "LA 14.10.26.mp4", "created_at": "2026-10-02"}]
+    assert ordering.annotate(by_date) == "date"
+    assert [l["sort_key"] for l in by_date] == [2, 0, 1]
+    assert by_date[2]["lecture_date"] == "2026-10-14"
+
+    by_number = [{"source_filename": "VL10 Fourier.mp4", "created_at": "2026-10-01"},
+                 {"source_filename": "VL9 Reihen.mp4", "created_at": "2026-10-20"}]
+    assert ordering.annotate(by_number) == "number"
+    assert [l["sort_key"] for l in by_number] == [1, 0]  # 10 nach 9, nicht alphabetisch
+
+    mixed = [{"source_filename": "Einführung.mp4", "created_at": "2026-10-20"},
+             {"source_filename": "VL02.mp4", "created_at": "2026-10-01"}]
+    assert ordering.annotate(mixed) == "added"
+    assert [l["sort_key"] for l in mixed] == [1, 0]

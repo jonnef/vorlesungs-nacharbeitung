@@ -18,7 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import demo, exam, glossary, hints, search, slides
+from . import demo, exam, glossary, hints, ordering, search, slides
 from .config import settings
 from .db import Database
 from .render import render_inline, render_notes
@@ -308,10 +308,12 @@ def module_page(request: Request, module_id: int):
     scripts = _all("SELECT * FROM scripts WHERE module_id = ? ORDER BY id", module_id)
     lectures = _all("SELECT id, title, source_filename, duration_sec, created_at FROM lectures"
                     " WHERE module_id = ? ORDER BY source_filename", module_id)
+    sort_basis = ordering.annotate(lectures)
+    lectures.sort(key=lambda l: l["sort_key"], reverse=True)  # neueste zuerst; im Browser umstellbar
     for lec in lectures:
         lec["job"] = service.latest_job(lec["id"])
     return templates.TemplateResponse(request, "module.html", {
-        "module": module, "scripts": scripts, "lectures": lectures, "b": _budget(),
+        "module": module, "scripts": scripts, "lectures": lectures, "sort_basis": sort_basis, "b": _budget(),
         "glossary_count": len(service.module_glossary(module_id)),
         "glossary_status": service.glossary_status(module_id),
         "exam": service.module_exam(module_id),

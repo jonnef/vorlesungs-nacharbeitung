@@ -22,17 +22,51 @@
     <span class="muted">· mit Beispielen und Diagrammen, vorher siehst du die Kosten</span></p>
   {% endif %}
   {% if lectures %}
-  <table>
-    <tr><th>Vorlesung</th><th>Dauer</th><th>Status</th><th>Kosten</th></tr>
+  {% set status_rank = {"submitted": 0, "estimated": 1, "blocked": 1, "failed": 2, "done": 3} %}
+  <div class="lecture-sort">
+    <label class="muted" for="lecture-sort">Sortieren:</label>
+    <select id="lecture-sort">
+      <option value="new">Neueste zuerst</option>
+      <option value="old">Älteste zuerst</option>
+      <option value="name">Name A–Z</option>
+      <option value="status">Status (in Arbeit zuerst)</option>
+    </select>
+    <span class="muted">· nach {{ {"date": "Datum im Dateinamen", "number": "Vorlesungsnummer", "added": "Eingang in der App"}[sort_basis] }}</span>
+  </div>
+  <table id="lectures">
+    <thead><tr><th>Vorlesung</th><th>Datum</th><th>Dauer</th><th>Status</th><th>Kosten</th></tr></thead>
+    <tbody>
     {% for l in lectures %}
-    <tr>
+    <tr data-order="{{ l.sort_key }}" data-name="{{ l.title|lower }}"
+        data-status="{{ status_rank.get(l.job.status, 4) if l.job else 4 }}">
       <td><a href="{{ request.state.base }}/lectures/{{ l.id }}">{{ l.title }}</a><div class="muted">{{ l.source_filename }}</div></td>
+      <td class="muted" style="white-space:nowrap">{{ l.lecture_date[8:10] }}.{{ l.lecture_date[5:7] }}.{{ l.lecture_date[:4] }}</td>
       <td>{{ fmt_ts(l.duration_sec) }}</td>
       <td>{% if l.job %}{% include "_status.html" with context %}{% else %}–{% endif %}</td>
       <td class="muted">{% if l.job %}max. {{ "%.2f"|format(l.job.cost_est_usd) }} USD{% endif %}</td>
     </tr>
     {% endfor %}
+    </tbody>
   </table>
+  <script>
+    (function () {
+      var select = document.getElementById("lecture-sort"), body = document.querySelector("#lectures tbody");
+      var compare = {
+        new: function (a, b) { return b.dataset.order - a.dataset.order; },
+        old: function (a, b) { return a.dataset.order - b.dataset.order; },
+        name: function (a, b) { return a.dataset.name.localeCompare(b.dataset.name, "de", { numeric: true }); },
+        status: function (a, b) { return a.dataset.status - b.dataset.status || b.dataset.order - a.dataset.order; }
+      };
+      function apply() {
+        var rows = Array.prototype.slice.call(body.rows);
+        rows.sort(compare[select.value] || compare.new).forEach(function (r) { body.appendChild(r); });
+        try { localStorage.setItem("vorlesungen-sortierung", select.value); } catch (e) {}
+      }
+      try { var saved = localStorage.getItem("vorlesungen-sortierung"); if (compare[saved]) select.value = saved; } catch (e) {}
+      select.addEventListener("change", apply);
+      apply();
+    })();
+  </script>
   {% else %}
   <p class="muted">Noch keine Vorlesungen. Leg Videos auf dem Mac in
   <code>Studium/Vorlesungen/{{ module.name }}/</code> – der Watcher transkribiert sie und schickt sie hierher.</p>

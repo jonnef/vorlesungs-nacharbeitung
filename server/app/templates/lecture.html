@@ -48,7 +48,7 @@
 <div class="notes-tools"><button type="button" class="secondary" data-open>Alles aufklappen</button>
   <button type="button" class="secondary" data-close>Alles zuklappen</button></div>
 <article class="card notes">{{ notes_html|safe }}</article>
-{% set module_id = lec.module_id %}{% include "_notes_assets.html" %}
+{% set module_id = lec.module_id %}{% set lecture_id = lec.id %}{% include "_notes_assets.html" %}
 <div class="search-nav" hidden><span></span>
   <button type="button" class="secondary" data-prev aria-label="Vorheriger Treffer">‹</button>
   <button type="button" class="secondary" data-next aria-label="Nächster Treffer">›</button>
@@ -127,6 +127,34 @@
   })();
 </script>
 {% endif %}
+
+<div class="card">
+  <strong>Folien aus der Vorlesung</strong>
+  <span class="muted">· mit den Anmerkungen des Dozenten, erscheinen beim Klick auf eine Seitenangabe über der Skriptseite</span>
+  {% if lecture_slides %}
+  <ul style="margin:8px 0">
+    {% for s in lecture_slides %}
+    <li><a href="{{ request.state.base }}/vorlesungsfolien/{{ s.id }}.pdf" target="_blank">{{ s.filename }}</a>
+      <span class="muted">· {{ s.page_count }} Seiten</span>
+      {% if not demo %}
+      <form class="inline" method="post" action="{{ request.state.base }}/vorlesungsfolien/{{ s.id }}/zuordnen">
+        <input type="hidden" name="back" value="/lectures/{{ lec.id }}">
+        <button class="secondary" style="font-size:13px;padding:2px 8px">gehört nicht hierher</button></form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted" style="margin:6px 0">Noch keine. Leg das PDF auf dem Mac in
+    <code>Studium/{{ lec.module }}/Vorlesungsfolien/</code> (z. B. mit „VL03“ oder dem Datum im Namen) oder lade es hier hoch.</p>
+  {% endif %}
+  {% if not demo %}
+  <form method="post" action="{{ request.state.base }}/lectures/{{ lec.id }}/vorlesungsfolien" enctype="multipart/form-data">
+    <input type="file" name="files" accept=".pdf" multiple required>
+    <input type="submit" value="Folien hochladen">
+  </form>
+  {% endif %}
+</div>
 
 <details class="card" id="transkript">
   <summary>Transkript ({{ segments|length }} Segmente)</summary>

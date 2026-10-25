@@ -132,6 +132,13 @@ mit dem neuen Material erneut (die aktualisierte Fassung landet auch wieder in i
 - **Folien:** Ein Klick auf eine Seitenangabe wie `[Skript S. 12]` blendet die Seite aus dem
   Dozenten-PDF ein (der Pi rendert sie einmal und speichert sie zwischen).
 - In den Markdown-Dateien stehen die Kästen in Obsidian-Schreibweise (`> [!example]- …`).
+- **Bemalte Folien aus der Vorlesung:** PDFs mit den Anmerkungen des Dozenten aus einer
+  bestimmten Vorlesung gehören nach `Studium/<Modul>/Vorlesungsfolien/` (nicht nach `Skripte/`).
+  Der Pi ordnet sie über Nummer oder Datum im Dateinamen der Vorlesung zu (`VL03 …`,
+  `Vorlesung 3 …`, `03_…`, `14.10.2026`, `2026-10-14`); was nicht eindeutig passt, ordnest du auf
+  der Modulseite unter „Folien ohne Vorlesung“ zu, oder du lädst es direkt in der Vorlesung hoch.
+  Beim Klick auf eine Seitenangabe erscheint dann über der Skriptseite die bemalte Fassung – die
+  passende Seite findet die App über den Folientext. Diese PDFs gehen nicht an Claude (keine Kosten).
 - **Suche:** Auf jeder Modulseite durchsucht das Suchfeld die Notizen aller Vorlesungen
   (Groß-/Kleinschreibung egal, `ae`/`oe`/`ue`/`ss` finden auch Umlaute, `"…"` sucht eine Phrase,
   mehrere Wörter müssen im selben Abschnitt stehen). Auf Wunsch auch in den Transkripten. Ein Klick

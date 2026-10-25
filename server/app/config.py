@@ -69,5 +69,9 @@ class Settings:
     def upload_dir(self) -> Path:
         return self.data_dir / "skripte"
 
+    @property
+    def lecture_slides_dir(self) -> Path:
+        return self.data_dir / "vorlesungsfolien"
+
 
 settings = Settings()

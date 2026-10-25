@@ -39,6 +39,29 @@
   {% endif %}
 </div>
 
+{% if open_slides and not demo %}
+<h2>Folien ohne Vorlesung</h2>
+<div class="card">
+  <p class="muted" style="margin-top:0">Diese bemalten Folien ließen sich keiner Vorlesung zuordnen (der Dateiname enthält
+    keine passende Nummer oder kein Datum). Bitte von Hand zuordnen:</p>
+  <table>
+    {% for s in open_slides %}
+    <tr><td><a href="{{ request.state.base }}/vorlesungsfolien/{{ s.id }}.pdf" target="_blank">{{ s.filename }}</a>
+        <div class="muted">{{ s.page_count }} Seiten</div></td>
+      <td><form method="post" action="{{ request.state.base }}/vorlesungsfolien/{{ s.id }}/zuordnen" style="display:flex;gap:6px;flex-wrap:wrap">
+        <input type="hidden" name="back" value="/modules/{{ module.id }}">
+        <select name="lecture_id" required style="font:inherit;padding:4px 8px;border-radius:8px">
+          <option value="">Vorlesung wählen …</option>
+          {% for l in lectures %}<option value="{{ l.id }}">{{ l.title }}</option>{% endfor %}
+        </select>
+        <button>Zuordnen</button></form></td>
+      <td><form method="post" action="{{ request.state.base }}/vorlesungsfolien/{{ s.id }}/loeschen">
+        <input type="hidden" name="back" value="/modules/{{ module.id }}"><button class="secondary">Löschen</button></form></td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
 <h2>Dozenten-Materialien</h2>
 <div class="card">
   {% if scripts %}

@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import exam, glossary, hints, pricing
+from . import exam, glossary, hints, lecture_slides, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -110,6 +110,97 @@ class Service:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    # ---------- Bemalte Folien aus der Vorlesung ----------
+
+    def lecture_slides_path(self, row: dict) -> Path:
+        return self.settings.lecture_slides_dir / str(row["module_id"]) / f"{row['sha256'][:12]}_{row['filename']}"
+
+    def add_lecture_slides(self, module_id: int, filename: str, tmp_path: Path,
+                           lecture_id: int | None = None) -> dict:
+        """Speichert ein PDF mit bemalten Folien; ohne lecture_id über den Dateinamen zugeordnet."""
+        sha = hashlib.sha256(tmp_path.read_bytes()).hexdigest()
+        with self.db.connect() as conn:
+            lectures = [dict(r) for r in conn.execute(
+                "SELECT id, title, source_filename FROM lectures WHERE module_id = ?", (module_id,))]
+            if lecture_id is None:
+                lecture_id = lecture_slides.match_lecture(filename, lectures)
+            row = conn.execute("SELECT * FROM lecture_slides WHERE module_id = ? AND sha256 = ?",
+                               (module_id, sha)).fetchone()
+            if row:
+                if lecture_id is not None and row["lecture_id"] != lecture_id:
+                    conn.execute("UPDATE lecture_slides SET lecture_id = ? WHERE id = ?", (lecture_id, row["id"]))
+                return {"slide_id": row["id"], "lecture_id": lecture_id or row["lecture_id"], "created": False}
+            pages = extract_pages(tmp_path)
+            row = {"module_id": module_id, "sha256": sha, "filename": Path(filename).name}
+            dest = self.lecture_slides_path(row)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(tmp_path, dest)
+            slide_id = conn.execute(
+                "INSERT INTO lecture_slides (module_id, lecture_id, filename, sha256, page_count, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (module_id, lecture_id, row["filename"], sha, len(pages), now()),
+            ).lastrowid
+            conn.executemany(
+                "INSERT INTO lecture_slide_pages (slide_id, page_index, text) VALUES (?, ?, ?)",
+                [(slide_id, i, text) for i, _label, text in pages],
+            )
+        return {"slide_id": slide_id, "lecture_id": lecture_id, "created": True}
+
+    def assign_lecture_slides(self, slide_id: int, lecture_id: int | None) -> None:
+        with self.db.connect() as conn:
+            conn.execute("UPDATE lecture_slides SET lecture_id = ? WHERE id = ?", (lecture_id, slide_id))
+
+    def delete_lecture_slides(self, slide_id: int) -> None:
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT * FROM lecture_slides WHERE id = ?", (slide_id,)).fetchone()
+            if not row:
+                return
+            conn.execute("DELETE FROM lecture_slides WHERE id = ?", (slide_id,))
+        self.lecture_slides_path(dict(row)).unlink(missing_ok=True)
+        shutil.rmtree(self.settings.data_dir / "folien-vorlesung" / str(slide_id), ignore_errors=True)
+
+    def _assign_unmatched_slides(self, module_id: int) -> None:
+        """Noch nicht zugeordnete Folien einer neu hinzugekommenen Vorlesung zuordnen."""
+        with self.db.connect() as conn:
+            open_slides = conn.execute(
+                "SELECT id, filename FROM lecture_slides WHERE module_id = ? AND lecture_id IS NULL",
+                (module_id,)).fetchall()
+            if not open_slides:
+                return
+            lectures = [dict(r) for r in conn.execute(
+                "SELECT id, title, source_filename FROM lectures WHERE module_id = ?", (module_id,))]
+            for s in open_slides:
+                lecture_id = lecture_slides.match_lecture(s["filename"], lectures)
+                if lecture_id is not None:
+                    conn.execute("UPDATE lecture_slides SET lecture_id = ? WHERE id = ?", (lecture_id, s["id"]))
+
+    def lecture_slides_of(self, *, lecture_id: int | None = None, module_id: int | None = None) -> list[dict]:
+        """Folien einer Vorlesung bzw. die noch nicht zugeordneten eines Moduls."""
+        with self.db.connect() as conn:
+            if lecture_id is not None:
+                rows = conn.execute("SELECT * FROM lecture_slides WHERE lecture_id = ? ORDER BY id", (lecture_id,))
+            else:
+                rows = conn.execute("SELECT * FROM lecture_slides WHERE module_id = ? AND lecture_id IS NULL"
+                                    " ORDER BY id", (module_id,))
+            return [dict(r) for r in rows]
+
+    def annotated_page(self, lecture_id: int, kuerzel: str, label: str) -> dict | None:
+        """Bemalte Seite aus der Vorlesung, die zur Skriptseite [Kürzel S. Seite] passt."""
+        with self.db.connect() as conn:
+            script_page = conn.execute(
+                "SELECT p.text, p.page_index, s.page_count FROM pages p JOIN scripts s ON s.id = p.script_id"
+                " JOIN lectures l ON l.module_id = s.module_id"
+                " WHERE l.id = ? AND s.kuerzel = ? AND p.label = ? ORDER BY p.page_index LIMIT 1",
+                (lecture_id, kuerzel, label)).fetchone()
+            if not script_page:
+                return None
+            pages = [dict(r) for r in conn.execute(
+                "SELECT ls.id AS slide_id, ls.module_id, ls.sha256, ls.filename, ls.page_count, lp.page_index, lp.text"
+                " FROM lecture_slides ls JOIN lecture_slide_pages lp ON lp.slide_id = ls.id"
+                " WHERE ls.lecture_id = ? ORDER BY ls.id, lp.page_index", (lecture_id,))]
+        return lecture_slides.best_page(script_page["text"], pages, script_page["page_count"],
+                                        script_page["page_index"])
+
     # ---------- Vorlesungen ----------
 
     def add_lecture(self, module_id: int, title: str, source_filename: str,
@@ -129,11 +220,13 @@ class Service:
                     (title, duration_sec, json.dumps(segments), row["id"]),
                 )
                 return row["id"]
-            return conn.execute(
+            lecture_id = conn.execute(
                 "INSERT INTO lectures (module_id, title, source_filename, duration_sec,"
                 " segments_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                 (module_id, title, source_filename, duration_sec, json.dumps(segments), now()),
             ).lastrowid
+        self._assign_unmatched_slides(module_id)
+        return lecture_id
 
     def latest_job(self, lecture_id: int) -> dict | None:
         with self.db.connect() as conn:

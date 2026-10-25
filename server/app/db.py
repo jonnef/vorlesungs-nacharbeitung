@@ -98,6 +98,25 @@ CREATE TABLE IF NOT EXISTS exam_hints (
     verified INTEGER NOT NULL
 );
 
+-- Bemalte Folien aus einer Vorlesung (nur zum Anzeigen neben der Skriptseite).
+-- lecture_id NULL = noch keiner Vorlesung zugeordnet.
+CREATE TABLE IF NOT EXISTS lecture_slides (
+    id INTEGER PRIMARY KEY,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    lecture_id INTEGER REFERENCES lectures(id) ON DELETE SET NULL,
+    filename TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    page_count INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (module_id, sha256)
+);
+
+CREATE TABLE IF NOT EXISTS lecture_slide_pages (
+    slide_id INTEGER NOT NULL REFERENCES lecture_slides(id) ON DELETE CASCADE,
+    page_index INTEGER NOT NULL,
+    text TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS usage_log (
     id INTEGER PRIMARY KEY,
     job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,

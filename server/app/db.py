@@ -120,7 +120,9 @@ CREATE TABLE IF NOT EXISTS lecture_slide_pages (
 -- Lernen: Karteikarten (kind 'karte') und Übungsaufgaben ('aufgabe') aller Module in einem Pool.
 -- variants_json: [{front, back, result}, …] – Aufgaben in mehreren Varianten mit anderen Zahlen.
 -- Lernstand (SM-2): due (Datum), interval_days, ease, reps, lapses; views zählt Wiederholungen
--- (wählt die Variante); suspended = vom Nutzer ausgesetzt (z. B. fehlerhafte Karte).
+-- (wählt die Variante); suspended = archiviert (kommt nicht dran, wiederherstellbar);
+-- deleted_at = gelöscht: Zeile bleibt als Merker, damit die Karte bei einer neuen Fassung
+-- der Notizen nicht wieder entsteht, erscheint aber nirgends mehr.
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY,
     module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
@@ -141,6 +143,7 @@ CREATE TABLE IF NOT EXISTS cards (
     views INTEGER NOT NULL DEFAULT 0,
     last_reviewed TEXT,
     suspended INTEGER NOT NULL DEFAULT 0,
+    deleted_at TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -189,6 +192,8 @@ class Database:
             conn.execute("ALTER TABLE jobs ADD COLUMN source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL")
         if "source_ids" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN source_ids TEXT")
+        if "deleted_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(cards)")}:
+            conn.execute("ALTER TABLE cards ADD COLUMN deleted_at TEXT")
 
     @contextmanager
     def connect(self):

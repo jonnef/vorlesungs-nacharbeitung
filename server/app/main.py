@@ -502,7 +502,7 @@ def learn_page(request: Request, modul: str = "", art: str = "", ohne_tr: str = 
         "f": f, "query": _learn_query(f), "card": card, "view": view, "nr": nr, "demo_count": demo_count,
         "counts": service.learning_counts(today, **sel), "modules": service.learning_modules(today),
         "all_modules": _all("SELECT id, name FROM modules ORDER BY name"),
-        "suspended": service.suspended_cards(f["modul"]), "b": _budget()})
+        "archived": service.archived_count(f["modul"]), "b": _budget()})
 
 
 @app.post("/lernen/{card_id}/bewerten", dependencies=[Depends(web_auth)])
@@ -515,12 +515,39 @@ def learn_grade(request: Request, card_id: int, grade: int = Form(...), modul: s
     return _redirect(request, "/lernen" + _learn_query(_learn_filters(modul, art, ohne_tr)))
 
 
-@app.post("/lernen/{card_id}/aussetzen", dependencies=[Depends(web_auth)])
-def learn_suspend(request: Request, card_id: int, wieder: str = Form(""), modul: str = Form(""),
-                  art: str = Form(""), ohne_tr: str = Form("")):
-    _get("SELECT id FROM cards WHERE id = ?", card_id)
-    service.set_card_suspended(card_id, not wieder)
-    return _redirect(request, "/lernen" + _learn_query(_learn_filters(modul, art, ohne_tr)))
+def _safe_back(back: str, fallback: str = "/lernen") -> str:
+    return back if back.startswith("/") and not back.startswith("//") else fallback
+
+
+@app.post("/lernen/{card_id}/archivieren", dependencies=[Depends(web_auth)])
+def learn_archive(request: Request, card_id: int, wieder: str = Form(""), back: str = Form("/lernen")):
+    _get("SELECT id FROM cards WHERE id = ? AND deleted_at IS NULL", card_id)
+    service.set_card_archived(card_id, not wieder)
+    return _redirect(request, _safe_back(back))
+
+
+@app.post("/lernen/{card_id}/loeschen", dependencies=[Depends(web_auth)])
+def learn_delete(request: Request, card_id: int, back: str = Form("/lernen")):
+    _get("SELECT id FROM cards WHERE id = ? AND deleted_at IS NULL", card_id)
+    service.delete_card(card_id)
+    return _redirect(request, _safe_back(back))
+
+
+@app.get("/lernen/karten", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def cards_page(request: Request, modul: str = "", archiv: str = ""):
+    module_id = int(modul) if modul.isdigit() else None
+    archived = archiv == "1"
+    items = service.list_cards(module_id, archived)
+    for c in items:
+        c["front_html"] = render_inline(c["variants"][0]["front"])
+    params = {k: v for k, v in (("modul", module_id or ""), ("archiv", "1" if archived else "")) if v}
+    return templates.TemplateResponse(request, "cards.html", {
+        "items": items, "module_id": module_id, "archived": archived,
+        "back": "/lernen/karten" + ("?" + urlencode(params) if params else ""),
+        "active_count": len(service.list_cards(module_id, False)) if archived else len(items),
+        "archived_count": service.archived_count(module_id),
+        "all_modules": _all("SELECT id, name FROM modules ORDER BY name"), "today": date.today().isoformat(),
+        "b": _budget()})
 
 
 @app.post("/modules/{module_id}/scripts", dependencies=[Depends(web_auth)])

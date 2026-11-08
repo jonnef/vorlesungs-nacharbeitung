@@ -578,7 +578,9 @@ class Service:
             lec = conn.execute("SELECT module_id, duration_sec FROM lectures WHERE id = ?",
                                (job["lecture_id"],)).fetchone()
             items = cards.parse(text, lec["duration_sec"], {tuple(p) for p in json.loads(job["pages_json"])})
-            conn.execute("DELETE FROM cards WHERE lecture_id = ? AND last_reviewed IS NULL", (job["lecture_id"],))
+            # Gelöschte Karten bleiben als Merker stehen, damit sie nicht neu entstehen.
+            conn.execute("DELETE FROM cards WHERE lecture_id = ? AND last_reviewed IS NULL AND deleted_at IS NULL",
+                         (job["lecture_id"],))
             known = {r["norm"] for r in conn.execute("SELECT norm FROM cards WHERE lecture_id = ?",
                                                      (job["lecture_id"],))}
             new = [c for c in items if c["norm"] not in known]
@@ -594,7 +596,7 @@ class Service:
 
     @staticmethod
     def _card_where(module_id: int | None, kind: str | None, no_calculator: bool) -> tuple[str, list]:
-        where, args = ["c.suspended = 0"], []
+        where, args = ["c.suspended = 0", "c.deleted_at IS NULL"], []
         if module_id:
             where.append("c.module_id = ?")
             args.append(module_id)
@@ -676,9 +678,27 @@ class Service:
                 (card_id, grade, int(card["last_reviewed"] is None), today.isoformat(), now()))
         return state
 
-    def set_card_suspended(self, card_id: int, suspended: bool) -> None:
+    def set_card_archived(self, card_id: int, archived: bool) -> None:
         with self.db.connect() as conn:
-            conn.execute("UPDATE cards SET suspended = ? WHERE id = ?", (int(suspended), card_id))
+            conn.execute("UPDATE cards SET suspended = ? WHERE id = ?", (int(archived), card_id))
+
+    def delete_card(self, card_id: int) -> None:
+        """Endgültig löschen: aus Lernen, Archiv und Listen entfernen; der Merker verhindert,
+        dass die Karte bei einer neuen Fassung der Notizen wieder entsteht."""
+        with self.db.connect() as conn:
+            conn.execute("UPDATE cards SET deleted_at = ?, suspended = 0 WHERE id = ?", (now(), card_id))
+
+    def list_cards(self, module_id: int | None = None, archived: bool = False) -> list[dict]:
+        """Alle Karten (aktiv oder archiviert) für die Verwaltung, nach Modul und Vorlesung sortiert."""
+        where, args = ["c.deleted_at IS NULL", "c.suspended = ?"], [int(archived)]
+        if module_id:
+            where.append("c.module_id = ?")
+            args.append(module_id)
+        with self.db.connect() as conn:
+            ids = [r["id"] for r in conn.execute(
+                "SELECT c.id FROM cards c JOIN lectures l ON l.id = c.lecture_id JOIN modules m ON m.id = c.module_id"
+                f" WHERE {' AND '.join(where)} ORDER BY m.name, l.source_filename, c.id", args)]
+        return [self.card(i) for i in ids]
 
     def learning_modules(self, today) -> list[dict]:
         """Übersicht je Modul: Karten, Aufgaben, fällig, neu, ausgesetzt."""
@@ -690,13 +710,15 @@ class Service:
                 " COALESCE(SUM(c.suspended = 0 AND c.last_reviewed IS NOT NULL AND c.due <= ?), 0) AS due,"
                 " COALESCE(SUM(c.suspended = 0 AND c.last_reviewed IS NULL), 0) AS new,"
                 " COALESCE(SUM(c.suspended), 0) AS suspended"
-                " FROM modules m JOIN cards c ON c.module_id = m.id GROUP BY m.id ORDER BY m.name",
+                " FROM modules m JOIN cards c ON c.module_id = m.id AND c.deleted_at IS NULL"
+                " GROUP BY m.id ORDER BY m.name",
                 (today.isoformat(),)).fetchall()
         return [dict(r) for r in rows]
 
     def cards_status(self, module_id: int) -> dict:
         with self.db.connect() as conn:
-            total = conn.execute("SELECT COUNT(*) AS c FROM cards WHERE module_id = ? AND suspended = 0",
+            total = conn.execute("SELECT COUNT(*) AS c FROM cards WHERE module_id = ? AND suspended = 0"
+                                 " AND deleted_at IS NULL",
                                  (module_id,)).fetchone()["c"]
             running = conn.execute(
                 "SELECT COUNT(*) AS c FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
@@ -704,12 +726,14 @@ class Service:
                 (module_id,)).fetchone()["c"]
         return {"total": total, "pending": running}
 
-    def suspended_cards(self, module_id: int | None = None) -> list[dict]:
-        where, args = ("WHERE c.suspended = 1 AND c.module_id = ?", [module_id]) if module_id else (
-            "WHERE c.suspended = 1", [])
+    def archived_count(self, module_id: int | None = None) -> int:
+        sql = "SELECT COUNT(*) AS c FROM cards WHERE suspended = 1 AND deleted_at IS NULL"
+        args: list = []
+        if module_id:
+            sql += " AND module_id = ?"
+            args.append(module_id)
         with self.db.connect() as conn:
-            ids = [r["id"] for r in conn.execute(f"SELECT c.id FROM cards c {where} ORDER BY c.id", args)]
-        return [self.card(i) for i in ids]
+            return conn.execute(sql, args).fetchone()["c"]
 
     # ---------- Concept Map ----------
 

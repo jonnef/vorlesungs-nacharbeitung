@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Karten verwalten{% endblock %}
+{% block content %}
+<style>
+  .cards-tools { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
+  .cards-tools select, .cards-tools input[type=search] { font:inherit; padding:6px 10px; border-radius:8px;
+          border:1px solid var(--line); background:var(--bg); color:var(--fg); max-width:100%; }
+  .cards-tools input[type=search] { flex:1 1 200px; }
+  .tabs { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .tabs a { padding:6px 12px; text-decoration:none; color:var(--fg); font-size:15px; }
+  .tabs a + a { border-left:1px solid var(--line); }
+  .tabs a.active { background:var(--accent); color:#fff; }
+  .card-row { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; padding:12px 0;
+          border-bottom:1px solid var(--line); }
+  .card-row:last-child { border-bottom:0; }
+  .card-row[hidden] { display:none; }
+  .card-row .front { overflow-wrap:anywhere; min-width:0; }
+  .card-row .front .math { overflow-x:auto; max-width:100%; display:inline-block; vertical-align:middle; }
+  .card-row .meta { font-size:13px; color:var(--muted); margin-top:4px; display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; }
+  .badge { font-size:12px; padding:1px 9px; border-radius:99px; border:1px solid currentColor; white-space:nowrap; }
+  .badge.karte { color:var(--accent); } .badge.aufgabe { color:#7c3aed; } .badge.calc { color:var(--warn); }
+  .row-actions { display:flex; gap:6px; flex:none; }
+  .row-actions button { font-size:14px; padding:4px 10px; }
+  button.danger { background:transparent; color:var(--err); border-color:var(--err); }
+  @media (max-width: 560px) { .card-row { flex-direction:column; } }
+</style>
+
+<p class="muted"><a href="{{ request.state.base }}/lernen{% if module_id %}?modul={{ module_id }}{% endif %}">Lernen</a></p>
+<h1>Karten verwalten</h1>
+
+<form class="card cards-tools" method="get" action="{{ request.state.base }}/lernen/karten" id="filters">
+  <select name="modul" aria-label="Modul" onchange="this.form.submit()">
+    <option value="">Alle Module</option>
+    {% for m in all_modules %}<option value="{{ m.id }}"{% if module_id == m.id %} selected{% endif %}>{{ m.name }}</option>{% endfor %}
+  </select>
+  {% if archived %}<input type="hidden" name="archiv" value="1">{% endif %}
+  {% set mq = ("modul=" ~ module_id ~ "&") if module_id else "" %}
+  <span class="tabs">
+    <a href="{{ request.state.base }}/lernen/karten{% if module_id %}?modul={{ module_id }}{% endif %}"{% if not archived %} class="active"{% endif %}>Aktiv ({{ active_count }})</a>
+    <a href="{{ request.state.base }}/lernen/karten?{{ mq }}archiv=1"{% if archived %} class="active"{% endif %}>Archiviert ({{ archived_count }})</a>
+  </span>
+  <input type="search" id="q" placeholder="Suchen …" autocomplete="off" aria-label="Karten durchsuchen">
+  <noscript><input type="submit" value="Anzeigen"></noscript>
+</form>
+
+<div class="card" id="list">
+  {% for c in items %}
+  <div class="card-row" data-search="{{ (c.variants[0].front ~ ' ' ~ c.topic ~ ' ' ~ c.lecture_title)|lower }}">
+    <div>
+      <div class="front">{{ c.front_html|safe }}</div>
+      <div class="meta">
+        <span class="badge {{ c.kind }}">{{ "Aufgabe" if c.kind == "aufgabe" else "Karte" }}</span>
+        {% if c.calculator %}<span class="badge calc">Taschenrechner</span>{% endif %}
+        <span>{{ c.module_name }} · <a href="{{ request.state.base }}/lectures/{{ c.lecture_id }}">{{ c.lecture_title }}</a>{% if c.topic %} · {{ c.topic }}{% endif %} ·
+          {%- if not c.last_reviewed %} neu
+          {%- elif c.due and c.due <= today %} fällig
+          {%- else %} wieder am {{ c.due[8:10] }}.{{ c.due[5:7] }}.{% endif %}</span>
+      </div>
+    </div>
+    {% if not demo %}
+    <div class="row-actions">
+      <form method="post" action="{{ request.state.base }}/lernen/{{ c.id }}/archivieren" class="inline">
+        <input type="hidden" name="back" value="{{ back }}">
+        {% if archived %}<input type="hidden" name="wieder" value="1"><button class="secondary">Wiederherstellen</button>
+        {% else %}<button class="secondary">Archivieren</button>{% endif %}
+      </form>
+      <form method="post" action="{{ request.state.base }}/lernen/{{ c.id }}/loeschen" class="inline"
+            onsubmit="return confirm('Diese Karte endgültig löschen? Das lässt sich nicht rückgängig machen.')">
+        <input type="hidden" name="back" value="{{ back }}"><button class="danger">Löschen</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">{% if archived %}Keine archivierten Karten. Archivierte Karten kommen beim Lernen nicht dran, lassen sich hier aber wiederherstellen.
+    {% else %}Keine Karten{% if module_id %} in diesem Modul{% endif %}.{% endif %}</p>
+  {% endfor %}
+  <p id="empty" class="muted" style="margin:0" hidden>Keine Treffer.</p>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+  (function () {
+    if (window.katex) {
+      document.querySelectorAll("#list .math").forEach(function (el) {
+        try { katex.render(el.textContent, el, {displayMode: false, throwOnError: false}); } catch (e) {}
+      });
+    }
+    var q = document.getElementById("q"), rows = document.querySelectorAll(".card-row");
+    q.addEventListener("input", function () {
+      var t = q.value.trim().toLowerCase(), any = false;
+      rows.forEach(function (r) { var show = r.dataset.search.indexOf(t) !== -1; r.hidden = !show; any = any || show; });
+      document.getElementById("empty").hidden = any || !rows.length;
+    });
+  })();
+</script>
+{% endblock %}

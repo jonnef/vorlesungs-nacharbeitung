@@ -36,6 +36,8 @@
   @media (prefers-color-scheme: dark) { .grades button { color:#1c1917; } }
   .card-actions { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between;
           margin-top:12px; font-size:14px; }
+  .card-manage { display:inline-flex; gap:16px; }
+  .card-actions button.link.danger { color:var(--err); }
   .card-actions button.link { background:none; border:0; padding:0; color:var(--muted); text-decoration:underline; font-size:14px; }
   .kbd-hint { font-size:13px; color:var(--muted); text-align:center; margin-top:8px; }
   @media (hover: none) { .kbd-hint { display:none; } }
@@ -97,12 +99,17 @@
   <div class="card-actions">
     <a href="{{ request.state.base }}/lectures/{{ card.lecture_id }}">{{ card.lecture_title }}</a>
     {% if not demo %}
-    <form method="post" action="{{ request.state.base }}/lernen/{{ card.id }}/aussetzen" class="inline"
-          onsubmit="return confirm('Diese Karte aussetzen? Sie kommt nicht mehr dran, bis du sie wieder aufnimmst.')">
-      <input type="hidden" name="modul" value="{{ f.modul or '' }}"><input type="hidden" name="art" value="{{ f.art }}">
-      <input type="hidden" name="ohne_tr" value="{{ '1' if f.ohne_tr else '' }}">
-      <button class="link" title="Zum Beispiel, wenn die Karte fehlerhaft ist">Karte aussetzen</button>
-    </form>
+    <span class="card-manage">
+      <form method="post" action="{{ request.state.base }}/lernen/{{ card.id }}/archivieren" class="inline">
+        <input type="hidden" name="back" value="/lernen{{ query }}">
+        <button class="link" title="Kommt nicht mehr dran; unter „Karten verwalten“ wiederherstellbar">Archivieren</button>
+      </form>
+      <form method="post" action="{{ request.state.base }}/lernen/{{ card.id }}/loeschen" class="inline"
+            onsubmit="return confirm('Diese Karte endgültig löschen? Das lässt sich nicht rückgängig machen.')">
+        <input type="hidden" name="back" value="/lernen{{ query }}">
+        <button class="link danger">Löschen</button>
+      </form>
+    </span>
     {% endif %}
   </div>
 </div>
@@ -138,20 +145,8 @@
 </div>
 {% endif %}
 
-{% if suspended %}
-<details class="card">
-  <summary class="muted">Ausgesetzte Karten ({{ suspended|length }})</summary>
-  <table>
-    {% for s in suspended %}
-    <tr><td>{{ s.variants[0].front|inline_md|safe }}<div class="muted">{{ s.module_name }} · {{ s.lecture_title }}</div></td>
-      <td>{% if not demo %}<form method="post" action="{{ request.state.base }}/lernen/{{ s.id }}/aussetzen" class="inline">
-        <input type="hidden" name="wieder" value="1"><input type="hidden" name="modul" value="{{ f.modul or '' }}">
-        <input type="hidden" name="art" value="{{ f.art }}"><input type="hidden" name="ohne_tr" value="{{ '1' if f.ohne_tr else '' }}">
-        <button class="secondary">Wieder aufnehmen</button></form>{% endif %}</td></tr>
-    {% endfor %}
-  </table>
-</details>
-{% endif %}
+<p class="muted"><a href="{{ request.state.base }}/lernen/karten{% if f.modul %}?modul={{ f.modul }}{% endif %}">Karten verwalten</a>
+  · alle Karten ansehen, archivieren oder löschen{% if archived %} · {{ archived }} archiviert{% endif %}</p>
 
 <script>
   (function () {

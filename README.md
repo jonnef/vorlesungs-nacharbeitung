@@ -198,7 +198,9 @@ einem gemeinsamen Stapel:
   man sie aus, z. B. unterwegs. Außerdem lässt sich nach Modul und Art (Karten/Aufgaben) filtern.
 - Wiederholt wird wie bei Anki: Lösung aufdecken, dann „Nochmal“, „Schwer“, „Gut“ oder
   „Leicht“ (auch mit den Tasten 1–4). Pro Tag kommen höchstens `NEW_CARDS_PER_DAY` neue Karten dazu.
-- Eine fehlerhafte Karte lässt sich aussetzen; sie erscheint dann unten unter „Ausgesetzte Karten“.
+- Karten **archivieren** (kommen nicht mehr dran, wiederherstellbar) oder **löschen** (endgültig;
+  entstehen auch bei einer neuen Fassung der Notizen nicht wieder) – direkt beim Lernen oder unter
+  „Karten verwalten“, wo alle Karten nach Modul, aktiv/archiviert und per Suche aufgelistet sind.
 - Wird eine Vorlesung neu erstellt, werden ihre noch nie gelernten Karten ersetzt; schon gelernte
   bleiben samt Lernstand erhalten.
 - **Kosten:** grob 0,05–0,20 $ pro Vorlesung (Batch). Auch für bereits vorhandene Vorlesungen

@@ -92,12 +92,20 @@ def test_cards_flow(client, fake_client, sample_pdf):
     assert svc.next_card(today)["kind"] == "aufgabe"
     assert svc.learning_counts(today)["due"] == 1
 
-    # Aussetzen
-    client.post(f"/lernen/{task['id']}/aussetzen", data={})
+    # Archivieren und wiederherstellen
+    r = client.post(f"/lernen/{task['id']}/archivieren", data={"back": "/lernen?art=aufgabe"}, follow_redirects=False)
+    assert r.headers["location"] == "/lernen?art=aufgabe"
     assert svc.card(task["id"])["suspended"] == 1
-    assert "Ausgesetzte Karten (1)" in client.get("/lernen").text
-    client.post(f"/lernen/{task['id']}/aussetzen", data={"wieder": "1"})
+    assert svc.learning_counts(today)["total"] == 2
+    assert "1 archiviert" in client.get("/lernen").text
+    archive = client.get("/lernen/karten?archiv=1").text
+    assert "Archiviert (1)" in archive and "Wiederherstellen" in archive and "Eigenwerte von" in archive
+    client.post(f"/lernen/{task['id']}/archivieren", data={"wieder": "1", "back": "/lernen/karten?archiv=1"})
     assert svc.card(task["id"])["suspended"] == 0
+    # Unsichere Rücksprungadresse wird ignoriert
+    r = client.post(f"/lernen/{task['id']}/archivieren", data={"wieder": "1", "back": "//evil.example"},
+                    follow_redirects=False)
+    assert r.headers["location"] == "/lernen"
 
     # Neue Fassung der Notizen: gelernte Karten bleiben, ungelernte werden ersetzt, keine Dubletten
     client.post(f"/lectures/{lecture_id}/jobs")
@@ -106,6 +114,17 @@ def test_cards_flow(client, fake_client, sample_pdf):
         rows = conn.execute("SELECT id, last_reviewed FROM cards ORDER BY id").fetchall()
     assert len(rows) == 3 and {r["id"] for r in rows if r["last_reviewed"]} == {first["id"], task["id"]}
     assert "3 Karteikarten und Aufgaben" in client.get("/modules/1").text
+
+    # Löschen: verschwindet überall und entsteht bei einer neuen Fassung nicht wieder
+    new_card = next(c for c in svc.list_cards() if not c["last_reviewed"])
+    client.post(f"/lernen/{new_card['id']}/loeschen", data={"back": "/lernen/karten"})
+    assert svc.learning_counts(today)["total"] == 2 and len(svc.list_cards()) == 2
+    assert "Aktiv (2)" in client.get("/lernen/karten").text
+    assert client.post(f"/lernen/{new_card['id']}/loeschen", data={}).status_code == 404
+    client.post(f"/lectures/{lecture_id}/jobs")
+    _finish_notes_and_cards(fake_client)
+    assert len(svc.list_cards()) == 2
+    assert "2 Karteikarten und Aufgaben" in client.get("/modules/1").text
 
 
 def test_new_card_limit(client, fake_client, sample_pdf):
@@ -119,3 +138,17 @@ def test_new_card_limit(client, fake_client, sample_pdf):
         assert main.service.next_card(TODAY + timedelta(days=1)) is not None
     finally:
         main.settings.new_cards_per_day = 20
+
+
+def test_migration_adds_deleted_at(tmp_path):
+    import sqlite3
+
+    from app.db import SCHEMA, Database
+    path = tmp_path / "alt.db"
+    old = SCHEMA.replace("    deleted_at TEXT,\n", "")
+    assert old != SCHEMA
+    with sqlite3.connect(path) as conn:
+        conn.executescript(old)
+    Database(path)
+    with sqlite3.connect(path) as conn:
+        assert "deleted_at" in {r[1] for r in conn.execute("PRAGMA table_info(cards)")}

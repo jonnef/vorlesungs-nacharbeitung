@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Lernen{% endblock %}
+{% block content %}
+<style>
+  .learn-filters { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; }
+  .learn-filters select { font:inherit; padding:6px 10px; border-radius:8px; border:1px solid var(--line);
+          background:var(--bg); color:var(--fg); max-width:100%; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg label { padding:6px 12px; cursor:pointer; font-size:15px; }
+  .seg label + label { border-left:1px solid var(--line); }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg label:has(input:checked) { background:var(--accent); color:#fff; }
+  .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
+  .check { display:inline-flex; gap:6px; align-items:center; font-size:15px; cursor:pointer; }
+  .check input { width:18px; height:18px; }
+  .counts { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:15px; margin:4px 0 0; }
+  .counts strong { font-variant-numeric:tabular-nums; }
+  .learn-card { padding:20px; }
+  .learn-meta { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; font-size:14px; color:var(--muted); margin-bottom:10px; }
+  .badge { font-size:12px; padding:1px 9px; border-radius:99px; border:1px solid currentColor; white-space:nowrap; }
+  .badge.karte { color:var(--accent); } .badge.aufgabe { color:#7c3aed; } .badge.calc { color:var(--warn); }
+  .learn-card .front { font-size:1.08em; }
+  .learn-card .front > :first-child { margin-top:0; }
+  details.answer { margin-top:16px; }
+  details.answer > summary { list-style:none; display:block; text-align:center; padding:10px 14px; border-radius:8px;
+          border:1px solid var(--accent); color:var(--accent); font-weight:600; }
+  details.answer > summary::-webkit-details-marker { display:none; }
+  details.answer[open] > summary { display:none; }
+  .back { border-top:1px dashed var(--line); padding-top:12px; }
+  .grades { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:16px; }
+  .grades button { display:flex; flex-direction:column; align-items:center; gap:0; padding:8px 4px; line-height:1.3; }
+  .grades button small { font-size:12px; opacity:.85; font-weight:400; }
+  .grades .g1 { background:var(--err); border-color:var(--err); }
+  .grades .g2 { background:var(--warn); border-color:var(--warn); }
+  .grades .g3 { background:var(--ok); border-color:var(--ok); }
+  @media (prefers-color-scheme: dark) { .grades button { color:#1c1917; } }
+  .card-actions { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between;
+          margin-top:12px; font-size:14px; }
+  .card-actions button.link { background:none; border:0; padding:0; color:var(--muted); text-decoration:underline; font-size:14px; }
+  .kbd-hint { font-size:13px; color:var(--muted); text-align:center; margin-top:8px; }
+  @media (hover: none) { .kbd-hint { display:none; } }
+  @media (max-width: 480px) { .learn-card { padding:16px; } .grades { gap:6px; }
+    .grades button { font-size:14px; padding:8px 2px; } }
+  table.learn-modules td:not(:first-child), table.learn-modules th:not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; }
+</style>
+
+<h1>Lernen</h1>
+
+<form class="card learn-filters" method="get" action="{{ request.state.base }}/lernen" id="filters">
+  <select name="modul" aria-label="Modul">
+    <option value="">Alle Module</option>
+    {% for m in all_modules %}<option value="{{ m.id }}"{% if f.modul == m.id %} selected{% endif %}>{{ m.name }}</option>{% endfor %}
+  </select>
+  <span class="seg" role="radiogroup" aria-label="Art">
+    {% for value, label in [("", "Alles"), ("karte", "Karten"), ("aufgabe", "Aufgaben")] %}
+    <label><input type="radio" name="art" value="{{ value }}"{% if f.art == value %} checked{% endif %}>{{ label }}</label>
+    {% endfor %}
+  </span>
+  <label class="check"><input type="checkbox" name="ohne_tr" value="1"{% if f.ohne_tr %} checked{% endif %}> Ohne Taschenrechner</label>
+  <noscript><input type="submit" value="Anzeigen"></noscript>
+  <div class="counts muted" style="flex-basis:100%">
+    <span>Fällig <strong>{{ counts.due }}</strong></span>
+    <span>Neu heute <strong>{{ counts.new }}</strong>{% if counts.new_total > counts.new %} <span>(von {{ counts.new_total }})</span>{% endif %}</span>
+    <span>Heute gelernt <strong>{{ counts.reviewed_today }}</strong></span>
+    <span>Im Stapel <strong>{{ counts.total }}</strong></span>
+  </div>
+</form>
+
+{% if card %}
+<div class="card learn-card">
+  <div class="learn-meta">
+    <span class="badge {{ card.kind }}">{{ "Aufgabe" if card.kind == "aufgabe" else "Karteikarte" }}</span>
+    {% if card.calculator %}<span class="badge calc">Taschenrechner</span>{% endif %}
+    {% if view.variants > 1 %}<span class="badge" title="Bei jeder Wiederholung kommt die nächste Variante mit anderen Zahlen">Variante {{ view.variant }}/{{ view.variants }}</span>{% endif %}
+    <span>{{ card.module_name }}{% if card.topic %} · {{ card.topic }}{% endif %}</span>
+  </div>
+  <article class="notes">
+    <div class="front">{{ view.front|safe }}</div>
+    <details class="answer" id="answer">
+      <summary>{{ "Lösung zeigen" if card.kind == "aufgabe" else "Antwort zeigen" }}</summary>
+      <div class="back">{{ view.back|safe }}</div>
+      {% if demo %}
+        <p class="muted">In der Vorschau wird der Lernstand nicht gespeichert.
+          {% if demo_count > 1 %}<a href="{{ request.state.base }}/lernen{{ query or '?' }}{{ '&' if query else '' }}nr={{ nr + 1 }}">Nächste Beispielkarte →</a>{% endif %}</p>
+      {% else %}
+      <form method="post" action="{{ request.state.base }}/lernen/{{ card.id }}/bewerten" class="grades">
+        <input type="hidden" name="modul" value="{{ f.modul or '' }}"><input type="hidden" name="art" value="{{ f.art }}">
+        <input type="hidden" name="ohne_tr" value="{{ '1' if f.ohne_tr else '' }}">
+        {% for g, label, interval in view.grades %}
+        <button name="grade" value="{{ g }}" class="g{{ g }}" data-key="{{ g }}">{{ label }}<small>{{ interval }}</small></button>
+        {% endfor %}
+      </form>
+      <p class="kbd-hint">Tasten 1–4 zum Bewerten</p>
+      {% endif %}
+    </details>
+  </article>
+  <div class="card-actions">
+    <a href="{{ request.state.base }}/lectures/{{ card.lecture_id }}">{{ card.lecture_title }}</a>
+    {% if not demo %}
+    <form method="post" action="{{ request.state.base }}/lernen/{{ card.id }}/aussetzen" class="inline"
+          onsubmit="return confirm('Diese Karte aussetzen? Sie kommt nicht mehr dran, bis du sie wieder aufnimmst.')">
+      <input type="hidden" name="modul" value="{{ f.modul or '' }}"><input type="hidden" name="art" value="{{ f.art }}">
+      <input type="hidden" name="ohne_tr" value="{{ '1' if f.ohne_tr else '' }}">
+      <button class="link" title="Zum Beispiel, wenn die Karte fehlerhaft ist">Karte aussetzen</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% set module_id = card.module_id %}{% set lecture_id = card.lecture_id %}{% include "_notes_assets.html" %}
+{% else %}
+<div class="card">
+  {% if counts.total == 0 %}
+    <p style="margin:0"><strong>Noch keine Karten{% if f.modul or f.art or f.ohne_tr %} für diese Auswahl{% endif %}.</strong></p>
+    <p class="muted" style="margin-bottom:0">Karteikarten und Übungsaufgaben entstehen automatisch, sobald eine Vorlesung fertige Notizen hat.</p>
+  {% elif counts.new_total and not counts.new %}
+    <p style="margin:0"><strong>Geschafft für heute.</strong></p>
+    <p class="muted" style="margin-bottom:0">Alle fälligen Karten sind wiederholt und das Tageslimit für neue Karten ist erreicht.
+      Morgen geht es mit {{ counts.new_total }} weiteren neuen Karten weiter.</p>
+  {% else %}
+    <p style="margin:0"><strong>Geschafft für heute.</strong></p>
+    <p class="muted" style="margin-bottom:0">Gerade ist nichts fällig. Die nächsten Wiederholungen kommen an den kommenden Tagen.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if modules %}
+<h2>Module</h2>
+<div class="card">
+  <table class="learn-modules">
+    <thead><tr><th>Modul</th><th>Karten</th><th>Aufgaben</th><th>Fällig</th><th>Neu</th></tr></thead>
+    <tbody>
+    {% for m in modules %}
+    <tr><td><a href="{{ request.state.base }}/lernen?modul={{ m.id }}">{{ m.name }}</a></td>
+      <td>{{ m.karten }}</td><td>{{ m.aufgaben }}</td><td>{{ m.due }}</td><td>{{ m.new }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if suspended %}
+<details class="card">
+  <summary class="muted">Ausgesetzte Karten ({{ suspended|length }})</summary>
+  <table>
+    {% for s in suspended %}
+    <tr><td>{{ s.variants[0].front|inline_md|safe }}<div class="muted">{{ s.module_name }} · {{ s.lecture_title }}</div></td>
+      <td>{% if not demo %}<form method="post" action="{{ request.state.base }}/lernen/{{ s.id }}/aussetzen" class="inline">
+        <input type="hidden" name="wieder" value="1"><input type="hidden" name="modul" value="{{ f.modul or '' }}">
+        <input type="hidden" name="art" value="{{ f.art }}"><input type="hidden" name="ohne_tr" value="{{ '1' if f.ohne_tr else '' }}">
+        <button class="secondary">Wieder aufnehmen</button></form>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</details>
+{% endif %}
+
+<script>
+  (function () {
+    var form = document.getElementById("filters");
+    form.addEventListener("change", function () { form.submit(); });
+    var answer = document.getElementById("answer");
+    if (!answer) return;
+    document.addEventListener("keydown", function (ev) {
+      if (ev.target.closest("input, select, textarea") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (!answer.open && (ev.key === " " || ev.key === "Enter")) {
+        ev.preventDefault(); answer.open = true; return;
+      }
+      if (answer.open) {
+        var btn = answer.querySelector('button[data-key="' + ev.key + '"]');
+        if (btn) { ev.preventDefault(); btn.click(); }
+      }
+    });
+  })();
+</script>
+{% endblock %}

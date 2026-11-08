@@ -32,6 +32,11 @@ def test_preview_shows_sample_data(demo_client):
     assert "Austauschverfahren" in klausur and "Neu erstellen" not in klausur
     # „Basis“ kommt in beiden Vorlesungen vor und wird zusammengeführt
     assert len(main.service.module_glossary(1)) == 7
+    # Lernen: Beispielkarten zum Durchblättern, ohne Bewerten
+    lernen = demo_client.get("/lernen").text
+    assert "linear unabhängig" in lernen and "nr=1" in lernen and "/bewerten" not in lernen
+    assert "Eigenwerte" in demo_client.get("/lernen?art=aufgabe&nr=2").text
+    assert demo_client.post("/lernen/1/bewerten", data={"grade": "3"}).status_code == 403
 
 
 def test_preview_is_read_only(demo_client, fake_client):

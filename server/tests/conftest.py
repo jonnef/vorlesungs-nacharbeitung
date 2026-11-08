@@ -34,7 +34,9 @@ class FakeBatches:
         system = request["params"]["system"]
         is_exam = "Klausurvorbereitung" in system
         is_hints = "AUSDRÜCKLICH über die Klausur" in system
-        text = (self.parent.hints_json if is_hints else self.parent.glossary_json if is_glossary
+        is_cards = "Karteikarte" in system
+        text = (self.parent.cards_json if is_cards
+                else self.parent.hints_json if is_hints else self.parent.glossary_json if is_glossary
                 else self.parent.exam_md if is_exam else self.parent.notes)
         msg = SimpleNamespace(
             model="claude-opus-5",
@@ -70,6 +72,21 @@ class FakeClient:
              "zeitstempel": "00:00:08", "seiten": [], "erlaeuterung": ""},
             {"art": "klausurrelevant", "thema": "Zu spät", "zitat": "Heute geht es um Eigenwerte.",
              "zeitstempel": "05:00:00", "seiten": [], "erlaeuterung": ""},
+        ]})
+        self.cards_json = json.dumps({"eintraege": [
+            {"art": "karte", "thema": "Eigenwerte", "taschenrechner": False,
+             "varianten": [{"vorderseite": "Was ist ein Eigenwert?", "rueckseite": "Ein $\\lambda$ mit $Av = \\lambda v$.",
+                            "ergebnis": ""}, {"vorderseite": "Überzählig", "rueckseite": "x", "ergebnis": ""}],
+             "zeitstempel": ["00:00:10", "09:00:00"], "seiten": ["Skript S. 1", "Skript S. 99"]},
+            {"art": "aufgabe", "thema": "Eigenwerte berechnen", "taschenrechner": False,
+             "varianten": [{"vorderseite": f"Eigenwerte von $\\mathrm{{diag}}({a},{b})$?",
+                            "rueckseite": "Diagonalmatrix: Eigenwerte stehen auf der Diagonale.",
+                            "ergebnis": f"$\\lambda = {a}, {b}$"} for a, b in ((1, 2), (3, 4), (5, 6))],
+             "zeitstempel": [], "seiten": []},
+            {"art": "aufgabe", "thema": "Logarithmus", "taschenrechner": True,
+             "varianten": [{"vorderseite": "Berechne $\\ln 7$.", "rueckseite": "Mit dem Taschenrechner.",
+                            "ergebnis": "1,9459"}], "zeitstempel": [], "seiten": []},
+            {"art": "karte", "thema": "Leer", "taschenrechner": False, "varianten": [], "zeitstempel": [], "seiten": []},
         ]})
         self.counted = []
         self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self))

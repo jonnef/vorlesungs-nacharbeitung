@@ -319,12 +319,121 @@ def seed_hints_if_missing(db: Database) -> None:
                 )
 
 
+def _pm(a, b, c, d) -> str:
+    return rf"\begin{{pmatrix}} {a} & {b} \\ {c} & {d} \end{{pmatrix}}"
+
+
+def _vec(a, b) -> str:
+    return rf"\begin{{pmatrix}} {a} \\ {b} \end{{pmatrix}}"
+
+
+def _eigen_task(a, b, c, d, poly, factored, l1, l2) -> dict:
+    lam = r"\lambda"
+    return {
+        "front": f"Berechnen Sie die Eigenwerte der Matrix $$A = {_pm(a, b, c, d)}.$$",
+        "back": (f"Charakteristisches Polynom aufstellen:\n\n"
+                 f"$$\\det(A - {lam} E) = \\det {_pm(f'{a} - {lam}', b, c, f'{d} - {lam}')}"
+                 f" = ({a} - {lam})({d} - {lam}) - {b * c}$$\n\n"
+                 f"Ausmultiplizieren und faktorisieren: $${poly} = {factored}$$\n\n"
+                 f"Nullstellen ablesen: ${lam}_1 = {l1}$, ${lam}_2 = {l2}$."),
+        "result": f"${lam}_1 = {l1},\\ {lam}_2 = {l2}$",
+    }
+
+
+def _independence_task(v, w, det, independent, note) -> dict:
+    verdict = "linear unabhängig" if independent else "linear abhängig"
+    return {
+        "front": f"Sind die Vektoren ${_vec(*v)}$ und ${_vec(*w)}$ linear unabhängig?",
+        "back": (f"Zwei Vektoren im $\\mathbb{{R}}^2$ sind genau dann linear unabhängig, wenn die Determinante "
+                 f"der Matrix aus ihnen nicht null ist:\n\n"
+                 f"$$\\det {_pm(v[0], w[0], v[1], w[1])} = ({v[0]}) \\cdot ({w[1]}) - ({w[0]}) \\cdot ({v[1]})"
+                 f" = {det}$$\n\n{note}"),
+        "result": f"{verdict} (Determinante {det})",
+    }
+
+
+# (Vorlesung, Art, Thema, Taschenrechner, Varianten, Zeitstempel, Seiten)
+CARDS = [
+    (0, "karte", "Lineare Unabhängigkeit", False, [{
+        "front": r"Wann heißen Vektoren $v_1, \dots, v_n$ **linear unabhängig**?",
+        "back": r"Wenn aus $a_1 v_1 + \dots + a_n v_n = 0$ folgt, dass alle $a_i = 0$ sind – nur die triviale "
+                "Linearkombination ergibt den Nullvektor.", "result": ""}],
+     ["00:21:00", "00:22:00"], ["LA_Skript S. 2"]),
+    (0, "karte", "Basis und Dimension", False, [{
+        "front": "Was ist eine **Basis** eines Vektorraums, und was ist seine **Dimension**?",
+        "back": "Eine Basis ist ein linear unabhängiges Erzeugendensystem. Alle Basen haben gleich viele Elemente; "
+                "diese Anzahl ist die Dimension.", "result": ""}],
+     ["00:40:15", "00:48:00"], ["LA_Skript S. 2"]),
+    (0, "aufgabe", "Lineare Unabhängigkeit prüfen", False, [
+        _independence_task((1, 2), (3, 6), 0, False, "Die Determinante ist $0$, also sind die Vektoren linear "
+                           "abhängig – tatsächlich ist der zweite das Dreifache des ersten."),
+        _independence_task((1, 2), (2, 5), 1, True, r"Die Determinante ist $1 \neq 0$, also sind die Vektoren "
+                           r"linear unabhängig (und bilden eine Basis des $\mathbb{R}^2$)."),
+        _independence_task((2, -1), (-4, 2), 0, False, "Die Determinante ist $0$, also sind die Vektoren linear "
+                           "abhängig – der zweite ist das $(-2)$-Fache des ersten."),
+    ], ["00:22:00"], ["LA_Skript S. 2"]),
+    (1, "karte", "Eigenwerte bestimmen", False, [{
+        "front": "Wie bestimmt man die **Eigenwerte** einer quadratischen Matrix $A$?",
+        "back": r"Als Nullstellen des charakteristischen Polynoms: $\det(A - \lambda E) = 0$ setzen und nach "
+                r"$\lambda$ auflösen.", "result": ""}],
+     ["00:25:00", "00:26:00"], ["LA_Skript S. 3"]),
+    (1, "aufgabe", "Eigenwerte einer 2×2-Matrix", False, [
+        _eigen_task(2, 1, 1, 2, r"\lambda^2 - 4\lambda + 3", r"(\lambda - 1)(\lambda - 3)", 1, 3),
+        _eigen_task(4, 1, 2, 3, r"\lambda^2 - 7\lambda + 10", r"(\lambda - 2)(\lambda - 5)", 2, 5),
+        _eigen_task(1, 2, 2, 1, r"\lambda^2 - 2\lambda - 3", r"(\lambda + 1)(\lambda - 3)", -1, 3),
+    ], ["00:25:00", "00:26:00"], ["LA_Skript S. 3"]),
+    (1, "aufgabe", "Eigenwerte mit Wurzeln", True, [
+        {"front": f"Berechnen Sie die Eigenwerte von $$A = {_pm(1, 2, 3, 1)}$$ auf zwei Nachkommastellen.",
+         "back": r"$$\det(A - \lambda E) = (1 - \lambda)^2 - 6 = 0 \iff 1 - \lambda = \pm\sqrt{6}$$"
+                 "\n\n" r"Also $\lambda = 1 \pm \sqrt{6} \approx 1 \pm 2{,}449$.",
+         "result": r"$\lambda_1 \approx 3{,}45,\ \lambda_2 \approx -1{,}45$"},
+        {"front": f"Berechnen Sie die Eigenwerte von $$A = {_pm(2, 1, 3, 2)}$$ auf zwei Nachkommastellen.",
+         "back": r"$$\det(A - \lambda E) = (2 - \lambda)^2 - 3 = 0 \iff 2 - \lambda = \pm\sqrt{3}$$"
+                 "\n\n" r"Also $\lambda = 2 \pm \sqrt{3} \approx 2 \pm 1{,}732$.",
+         "result": r"$\lambda_1 \approx 3{,}73,\ \lambda_2 \approx 0{,}27$"},
+    ], ["00:26:00"], ["LA_Skript S. 3"]),
+    (1, "karte", "Diagonalisierbarkeit", False, [{
+        "front": r"Wann ist eine Matrix $A$ **diagonalisierbar**, und worauf muss man bei $A = S D S^{-1}$ achten?",
+        "back": "Genau dann, wenn es eine Basis aus Eigenvektoren gibt. Die Eigenvektoren in $S$ müssen in derselben "
+                "Reihenfolge stehen wie die zugehörigen Eigenwerte in $D$ – ein typischer Fehler.", "result": ""}],
+     ["00:50:00", "01:05:00"], ["LA_Skript S. 4"]),
+]
+
+
+def seed_cards_if_missing(db: Database) -> None:
+    with db.connect() as conn:
+        if conn.execute("SELECT COUNT(*) FROM jobs WHERE kind = 'cards'").fetchone()[0]:
+            return
+        rows = conn.execute(
+            "SELECT l.id AS lecture_id, l.module_id, MAX(j.id) AS notes_job_id FROM lectures l"
+            " JOIN jobs j ON j.lecture_id = l.id AND j.kind = 'notes' GROUP BY l.id ORDER BY l.source_filename"
+        ).fetchall()
+        if not rows:
+            return
+        job_ids = [conn.execute(
+            "INSERT INTO jobs (lecture_id, kind, source_job_id, status, model, request_json, pages_json,"
+            " input_tokens_est, cost_est_usd, created_at, updated_at)"
+            " VALUES (?, 'cards', ?, 'done', 'Beispiel', '{}', '[]', 0, 0, ?, ?)",
+            (r["lecture_id"], r["notes_job_id"], now(), now())).lastrowid for r in rows]
+        for index, kind, topic, calculator, variants, timestamps, pages in CARDS:
+            if index < len(rows):
+                r = rows[index]
+                conn.execute(
+                    "INSERT INTO cards (module_id, lecture_id, job_id, kind, topic, calculator, variants_json, norm,"
+                    " timestamps_json, pages_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (r["module_id"], r["lecture_id"], job_ids[index], kind, topic, int(calculator),
+                     json.dumps(variants), glossary.normalize(variants[0]["front"]), json.dumps(timestamps),
+                     json.dumps(pages), now()),
+                )
+
+
 def seed_if_empty(db: Database) -> None:
     try:
         _seed_module(db)
     finally:
         seed_hints_if_missing(db)
         seed_exam_if_missing(db)
+        seed_cards_if_missing(db)
         refresh_sample_texts(db)
 
 

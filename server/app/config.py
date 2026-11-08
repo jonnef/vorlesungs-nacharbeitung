@@ -52,6 +52,13 @@ class Settings:
     exam_effort: str = field(default_factory=lambda: _env("EXAM_EFFORT", "high"))
     exam_max_tokens: int = field(default_factory=lambda: int(_env("EXAM_MAX_TOKENS", "32000")))
 
+    # Karteikarten und Übungsaufgaben pro Vorlesung (aus Notizen + zitierten Skriptseiten).
+    cards_effort: str = field(default_factory=lambda: _env("CARDS_EFFORT", "medium"))
+    cards_max_tokens: int = field(default_factory=lambda: int(_env("CARDS_MAX_TOKENS", "20000")))
+    cards_script_tokens: int = field(default_factory=lambda: int(_env("CARDS_SCRIPT_TOKENS", "15000")))
+    # Wie viele neue Karten pro Tag beim Lernen dazukommen (über alle Module).
+    new_cards_per_day: int = field(default_factory=lambda: int(_env("NEW_CARDS_PER_DAY", "20")))
+
     monthly_budget_usd: float = field(default_factory=lambda: float(_env("MONTHLY_BUDGET_USD", "10")))
     # Jobs automatisch abschicken, wenn sie ins Budget passen (sonst Freigabe per Klick).
     auto_submit: bool = field(default_factory=lambda: _env("AUTO_SUBMIT", "1") == "1")

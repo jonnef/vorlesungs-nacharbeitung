@@ -35,7 +35,8 @@ class FakeBatches:
         is_exam = "Klausurvorbereitung" in system
         is_hints = "AUSDRÜCKLICH über die Klausur" in system
         is_cards = "Karteikarte" in system
-        text = (self.parent.cards_json if is_cards
+        is_conceptmap = "Concept Map" in system
+        text = (self.parent.conceptmap_json if is_conceptmap else self.parent.cards_json if is_cards
                 else self.parent.hints_json if is_hints else self.parent.glossary_json if is_glossary
                 else self.parent.exam_md if is_exam else self.parent.notes)
         msg = SimpleNamespace(
@@ -88,6 +89,14 @@ class FakeClient:
                             "ergebnis": "1,9459"}], "zeitstempel": [], "seiten": []},
             {"art": "karte", "thema": "Leer", "taschenrechner": False, "varianten": [], "zeitstempel": [], "seiten": []},
         ]})
+        self.conceptmap_json = json.dumps({
+            "knoten": [{"begriff": "Eigenwert", "gruppe": "Eigenwerte"}, {"begriff": "Erfunden", "gruppe": "X"}],
+            "kanten": [
+                {"von": "Ähnlichkeit", "nach": "eigenwert", "art": "verwendet", "beschriftung": "erhält die"},
+                {"von": "Ähnlichkeit", "nach": "Eigenwert", "art": "verwandt", "beschriftung": "doppelt"},
+                {"von": "Eigenwert", "nach": "Eigenwert", "art": "verwandt", "beschriftung": "Schleife"},
+                {"von": "Eigenwert", "nach": "Erfunden", "art": "teil", "beschriftung": "unbekannt"},
+            ]})
         self.counted = []
         self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self))
 

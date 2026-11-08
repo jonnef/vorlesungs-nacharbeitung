@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Concept Map {{ module.name }}{% endblock %}
+{% block content %}
+<style>
+  .cm-tools { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0 8px; }
+  .cm-tools input[type=search] { flex:1 1 200px; font:inherit; padding:6px 10px; border-radius:8px;
+          border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  .cm-tools select { font:inherit; padding:6px 10px; border-radius:8px; border:1px solid var(--line);
+          background:var(--card); color:var(--fg); max-width:100%; }
+  #cm { height:70vh; min-height:420px; max-height:820px; background:var(--card); border:1px solid var(--line);
+        border-radius:10px; position:relative; touch-action:none;
+        background-image:radial-gradient(color-mix(in srgb, var(--muted) 30%, transparent) 1px, transparent 1px);
+        background-size:18px 18px; }
+  #cm .cm-fallback { padding:16px; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:13px; color:var(--muted); margin:8px 0; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:0; }
+  .legend .line { display:inline-block; width:22px; height:0; border-top:2px solid var(--muted); margin-right:5px; vertical-align:3px; }
+  .legend .dashed { border-top-style:dashed; } .legend .dotted { border-top-style:dotted; }
+  #detail[hidden] { display:none; }
+  #detail h2 { margin:0 0 4px; font-size:1.2em; }
+  #detail .kind { font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:99px; padding:1px 8px; margin-left:6px; font-weight:400; vertical-align:2px; }
+  #detail .rel { margin:4px 0; }
+  #detail .rel button { font:inherit; background:none; border:0; padding:0; color:var(--accent); cursor:pointer; text-decoration:underline; }
+  #detail .rel .lbl { color:var(--muted); }
+  #detail .math.block { overflow-x:auto; }
+  .cm-list h3 { margin:1.2em 0 .3em; font-size:1.05em; }
+  .cm-list ul { margin:.2em 0; padding-left:1.2em; }
+  .cm-list li { margin:.3em 0; }
+</style>
+
+<p class="muted"><a href="{{ request.state.base }}/modules/{{ module.id }}">{{ module.name }}</a></p>
+<h1>Concept Map</h1>
+
+{% set latest = data.latest %}
+{% set running = latest and latest.status in ("estimated", "blocked", "submitted") %}
+{% if running or (latest and latest.status == "failed") or not data.map %}
+<div class="card">
+  {% if running %}
+    <span class="status s-{{ latest.status }}">{{ {"estimated": "wartet auf Freigabe", "blocked": "Budget reicht nicht", "submitted": "wird aktualisiert"}[latest.status] }}</span>
+    <span class="muted">Neue Fassung aus {{ (latest.source_ids|fromjson)|length }} Vorlesungen{% if not demo %} · höchstens {{ "%.2f"|format(latest.cost_est_usd) }} USD{% endif %}</span>
+    {% if latest.error %}<p class="err">{{ latest.error }}</p>{% endif %}
+    {% if not demo and latest.status in ("estimated", "blocked") %}
+      <form class="inline" method="post" action="{{ request.state.base }}/jobs/{{ latest.id }}/submit"><button>Jetzt erstellen</button></form>
+    {% endif %}
+  {% elif latest and latest.status == "failed" %}
+    <span class="status s-failed">Fehler</span> <span class="err">{{ latest.error }}</span>
+  {% endif %}
+  {% if not data.map and not running %}
+    <p class="muted" style="margin:{{ '8px' if latest else '0' }} 0 0">Die Concept Map entsteht automatisch aus dem Glossar, sobald die erste Vorlesung ausgewertet ist
+      {%- if glossary_status.lectures %} (gerade {{ glossary_status.lectures }} Vorlesung(en) im Glossar){% endif %}.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if data.map %}
+{% set m = data.map %}
+<p class="muted">{{ m.nodes|length }} Begriffe · {{ m.edges|length }} Verbindungen · Stand {{ data.updated_at[:10] }}
+  {%- if not demo and not running %} ·
+  <form class="inline" method="post" action="{{ request.state.base }}/modules/{{ module.id }}/concept-map"><button class="secondary" style="font-size:14px;padding:2px 10px">Neu erstellen</button></form>{% endif %}</p>
+
+<div class="cm-tools">
+  <input type="search" id="cm-search" placeholder="Begriff suchen …" list="cm-terms" autocomplete="off">
+  <datalist id="cm-terms">{% for n in m.nodes %}<option value="{{ n.term }}">{% endfor %}</datalist>
+  <select id="cm-lecture" aria-label="Vorlesung hervorheben">
+    <option value="">Alle Vorlesungen</option>
+    {% for l in m.lectures %}<option value="{{ l.id }}">{{ l.title }}</option>{% endfor %}
+  </select>
+  <button type="button" class="secondary" id="cm-fit">Ganz zeigen</button>
+</div>
+
+<div id="cm"><p class="cm-fallback muted">Die Grafik braucht eine Internetverbindung (Cytoscape). Unten steht die Concept Map als Liste.</p></div>
+
+<div class="legend" id="cm-legend">
+  {% for g in m.groups %}<span data-group="{{ loop.index0 }}"><span class="dot"></span>{{ g }}</span>{% endfor %}
+</div>
+<div class="legend">
+  <span><span class="line"></span>→ Voraussetzung / verwendet für</span>
+  <span><span class="line dashed"></span>hängt zusammen</span>
+  <span><span class="line dotted"></span>Spezialfall / Teil von</span>
+  <span>Begriff antippen: Verbindungen hervorheben und unten erklären</span>
+</div>
+
+<div class="card" id="detail" hidden aria-live="polite"></div>
+
+{% set by_id = {} %}{% for n in m.nodes %}{% set _ = by_id.update({n.id: n}) %}{% endfor %}
+<details class="card cm-list">
+  <summary><strong>Als Liste</strong> <span class="muted">– alle Begriffe nach Thema</span></summary>
+  {% for g in m.groups %}
+  <h3>{{ g }}</h3>
+  <ul>
+    {% for n in m.nodes if n.group == g %}
+    <li><strong>{{ n.term }}</strong>
+      {%- for e in m.edges if e["from"] == n.id %}{{ ";" if not loop.first else ":" }} {{ e.label or kinds[e.kind] }} → {{ by_id[e.to].term }}{% endfor %}</li>
+    {% endfor %}
+  </ul>
+  {% endfor %}
+</details>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script>
+(function () {
+  var data = {{ m|tojson }}, kinds = {{ kinds|tojson }}, base = {{ request.state.base|tojson }};
+  var box = document.getElementById("cm"), detail = document.getElementById("detail");
+  var css = getComputedStyle(document.documentElement);
+  function v(name) { return css.getPropertyValue(name).trim(); }
+  var dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+  var palette = dark ? ["#60a5fa", "#4ade80", "#fbbf24", "#f472b6", "#a78bfa", "#2dd4bf", "#fb923c", "#94a3b8"]
+                     : ["#2563eb", "#15803d", "#b45309", "#db2777", "#7c3aed", "#0f766e", "#c2410c", "#64748b"];
+  function color(group) { var i = data.groups.indexOf(group); return palette[(i < 0 ? 0 : i) % palette.length]; }
+  document.querySelectorAll("#cm-legend [data-group] .dot").forEach(function (dot) {
+    dot.style.background = palette[dot.parentNode.dataset.group % palette.length];
+  });
+  var lectureTitle = {};
+  data.lectures.forEach(function (l) { lectureTitle[l.id] = l.title; });
+  var nodeById = {};
+  data.nodes.forEach(function (n) { nodeById[n.id] = n; });
+
+  function math(el) {
+    if (!window.katex) return;
+    el.querySelectorAll(".math").forEach(function (m) {
+      try { katex.render(m.textContent, m, {displayMode: m.classList.contains("block"), throwOnError: false}); } catch (e) {}
+    });
+  }
+  function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+  function showDetail(id) {
+    var n = nodeById[id];
+    if (!n) { detail.hidden = true; return; }
+    var out = data.edges.filter(function (e) { return e.from === id; });
+    var inc = data.edges.filter(function (e) { return e.to === id; });
+    var html = "<h2>" + esc(n.term) + '<span class="kind">' + esc(n.kind) + "</span></h2>";
+    html += '<div class="muted">' + esc(n.group) + "</div>";
+    if (n.definition_html) html += "<p>" + n.definition_html + "</p>";
+    if (n.formula) html += '<div class="math block">' + esc(n.formula) + "</div>";
+    function rel(e, other, arrow) {
+      return '<div class="rel">' + arrow + ' <span class="lbl">' + esc(e.label || kinds[e.kind]) + '</span> <button type="button" data-id="' +
+             esc(other) + '">' + esc(nodeById[other].term) + "</button></div>";
+    }
+    if (out.length || inc.length) {
+      html += "<p><strong>Verbindungen</strong></p>";
+      out.forEach(function (e) { html += rel(e, e.to, "→"); });
+      inc.forEach(function (e) {
+        html += '<div class="rel">← <button type="button" data-id="' + esc(e.from) + '">' + esc(nodeById[e.from].term) +
+                '</button> <span class="lbl">' + esc(e.label || kinds[e.kind]) + "</span></div>";
+      });
+    }
+    if (n.lectures.length) {
+      html += '<p class="muted" style="margin-bottom:0">Vorkommen: ' + n.lectures.map(function (id) {
+        return '<a href="' + base + "/lectures/" + id + '">' + esc(lectureTitle[id] || "Vorlesung") + "</a>";
+      }).join(" · ") + ' · <a href="' + base + "/modules/{{ module.id }}/glossar\">Glossar</a></p>";
+    }
+    detail.innerHTML = html;
+    detail.hidden = false;
+    math(detail);
+  }
+  detail.addEventListener("click", function (ev) {
+    var b = ev.target.closest("button[data-id]");
+    if (b) focus(b.dataset.id, true);
+  });
+
+  if (!window.cytoscape) return;
+  box.innerHTML = "";
+
+  // Startpositionen: Themen im Kreis, Begriffe eines Themas eng beieinander → stabile Anordnung.
+  var groupCount = Math.max(1, data.groups.length), members = {};
+  data.nodes.forEach(function (n) { (members[n.group] = members[n.group] || []).push(n.id); });
+  var degree = {};
+  data.edges.forEach(function (e) { degree[e.from] = (degree[e.from] || 0) + 1; degree[e.to] = (degree[e.to] || 0) + 1; });
+  var elements = [];
+  data.nodes.forEach(function (n) {
+    var gi = Math.max(0, data.groups.indexOf(n.group)), list = members[n.group], k = list.indexOf(n.id);
+    var ga = 2 * Math.PI * gi / groupCount, R = groupCount > 1 ? 320 : 0;
+    var a = 2 * Math.PI * k / list.length, r = 30 + 12 * list.length;
+    elements.push({group: "nodes", data: {id: n.id, label: n.term, color: color(n.group),
+                   size: 18 + Math.min(26, 4 * (degree[n.id] || 0))},
+                   position: {x: R * Math.cos(ga) + r * Math.cos(a), y: R * Math.sin(ga) + r * Math.sin(a)}});
+  });
+  data.edges.forEach(function (e, i) {
+    elements.push({group: "edges", data: {id: "e" + i, source: e.from, target: e.to, kind: e.kind,
+                   label: e.label || kinds[e.kind]}});
+  });
+
+  var fg = v("--fg"), bg = v("--card"), muted = v("--muted"), accent = v("--accent");
+  var cy = cytoscape({
+    container: box, elements: elements, wheelSensitivity: 0.3, minZoom: 0.2, maxZoom: 3,
+    style: [
+      {selector: "node", style: {"background-color": "data(color)", width: "data(size)", height: "data(size)",
+        label: "data(label)", color: fg, "font-size": 12, "font-family": "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        "text-valign": "bottom", "text-margin-y": 4, "text-wrap": "wrap", "text-max-width": 120,
+        "text-outline-color": bg, "text-outline-width": 2.5, "border-width": 0}},
+      {selector: "edge", style: {width: 1.5, "line-color": muted, "target-arrow-color": muted, "target-arrow-shape": "triangle",
+        "arrow-scale": 0.9, "curve-style": "bezier", opacity: 0.55}},
+      {selector: 'edge[kind = "verwandt"]', style: {"line-style": "dashed", "target-arrow-shape": "none"}},
+      {selector: 'edge[kind = "spezialfall"], edge[kind = "teil"]', style: {"line-style": "dotted", width: 2, "target-arrow-shape": "triangle-backcurve"}},
+      {selector: "node.focus", style: {"border-width": 4, "border-color": accent, "font-weight": "bold", "z-index": 10}},
+      {selector: "edge.show", style: {opacity: 1, width: 2.2, "line-color": accent, "target-arrow-color": accent, "z-index": 9}},
+      {selector: ".faded", style: {opacity: 0.12}},
+      {selector: "edge.faded", style: {opacity: 0.06}},
+      {selector: ".dim", style: {opacity: 0.18}}
+    ],
+    layout: {name: "cose", randomize: false, nodeDimensionsIncludeLabels: true, animate: false, nodeRepulsion: function () { return 40000; },
+             idealEdgeLength: function () { return 150; }, nodeOverlap: 20, gravity: 0.4, numIter: 1500, padding: 30}
+  });
+
+  function clearFocus() {
+    cy.elements().removeClass("faded focus show");
+    detail.hidden = true;
+  }
+  function focus(id, center) {
+    var node = cy.getElementById(id);
+    if (!node.length) return;
+    cy.elements().removeClass("faded focus show");
+    var hood = node.closedNeighborhood();
+    cy.elements().not(hood).addClass("faded");
+    node.addClass("focus");
+    node.connectedEdges().addClass("show");
+    if (center) {
+      // Nachbarschaft zeigen, aber nicht so weit herauszoomen, dass die Schrift unlesbar wird.
+      cy.fit(hood, 50);
+      var z = Math.min(1.3, Math.max(0.9, cy.zoom()));
+      if (z !== cy.zoom()) { cy.zoom(z); cy.center(hood); }
+    }
+    showDetail(id);
+  }
+  cy.on("tap", "node", function (ev) { focus(ev.target.id(), false); });
+  cy.on("tap", function (ev) { if (ev.target === cy) clearFocus(); });
+
+  document.getElementById("cm-fit").addEventListener("click", function () { clearFocus(); cy.animate({fit: {padding: 30}, duration: 300}); });
+  var search = document.getElementById("cm-search");
+  search.addEventListener("change", function () {
+    var q = search.value.trim().toLowerCase();
+    if (!q) return clearFocus();
+    var hit = data.nodes.filter(function (n) { return n.term.toLowerCase() === q; })[0] ||
+              data.nodes.filter(function (n) { return n.term.toLowerCase().indexOf(q) !== -1; })[0];
+    if (hit) { focus(hit.id, true); detail.scrollIntoView({block: "nearest", behavior: "smooth"}); }
+  });
+  document.getElementById("cm-lecture").addEventListener("change", function (ev) {
+    var id = parseInt(ev.target.value, 10);
+    cy.elements().removeClass("dim");
+    if (!id) return;
+    var keep = cy.nodes().filter(function (n) { return nodeById[n.id()].lectures.indexOf(id) !== -1; });
+    cy.nodes().not(keep).addClass("dim");
+    cy.edges().filter(function (e) { return !keep.contains(e.source()) || !keep.contains(e.target()); }).addClass("dim");
+  });
+})();
+</script>
+{% if data.warnings and not demo %}
+<p class="muted">Hinweis: {{ data.warnings|join(" · ") }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import cards, exam, glossary, hints, lecture_slides, pricing
+from . import cards, conceptmap, exam, glossary, hints, lecture_slides, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -711,6 +711,93 @@ class Service:
             ids = [r["id"] for r in conn.execute(f"SELECT c.id FROM cards c {where} ORDER BY c.id", args)]
         return [self.card(i) for i in ids]
 
+    # ---------- Concept Map ----------
+
+    def _conceptmap_sources(self, module_id: int) -> list[list[int]]:
+        """[[lecture_id, glossary_job_id], …] der Glossareinträge, aus denen die Map entsteht."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT g.lecture_id, MAX(g.job_id) AS job_id FROM glossary_entries g"
+                " JOIN lectures l ON l.id = g.lecture_id WHERE g.module_id = ?"
+                " GROUP BY g.lecture_id ORDER BY MIN(l.source_filename)", (module_id,)).fetchall()
+        return [[r["lecture_id"], r["job_id"]] for r in rows]
+
+    def latest_conceptmap_job(self, module_id: int) -> dict | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT j.* FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'conceptmap' ORDER BY j.id DESC LIMIT 1", (module_id,)).fetchone()
+        return dict(row) if row else None
+
+    def create_conceptmap_job(self, module_id: int) -> int | None:
+        sources = self._conceptmap_sources(module_id)
+        groups = self.module_glossary(module_id)
+        if not sources or len(groups) < 2:
+            return None
+        with self.db.connect() as conn:
+            module = conn.execute("SELECT name FROM modules WHERE id = ?", (module_id,)).fetchone()["name"]
+        params = conceptmap.build_request(model=self.settings.model, effort=self.settings.conceptmap_effort,
+                                          max_tokens=self.settings.conceptmap_max_tokens, module=module, groups=groups)
+        return self._insert_job(sources[-1][0], "conceptmap", params, [], source_ids=sources)
+
+    def ensure_conceptmap_jobs(self) -> None:
+        """Erstellt die Concept Map neu, sobald neue Glossareinträge da sind.
+
+        Wartet wie die Klausurvorbereitung, solange im Modul noch Notizen oder Glossare
+        entstehen, damit nicht für jede Vorlesung eines Stapels eine eigene Fassung entsteht.
+        """
+        with self.db.connect() as conn:
+            modules = [r["id"] for r in conn.execute("SELECT id FROM modules")]
+            busy = {r["module_id"] for r in conn.execute(
+                "SELECT DISTINCT l.module_id FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE j.kind IN ('notes', 'glossary') AND j.status IN ('estimated', 'blocked', 'submitted')")}
+        for module_id in modules:
+            if module_id in busy:
+                continue
+            sources = self._conceptmap_sources(module_id)
+            if not sources:
+                continue
+            latest = self.latest_conceptmap_job(module_id)
+            if latest and json.loads(latest["source_ids"] or "[]") == sources:
+                if latest["status"] == "blocked" and self.settings.auto_submit:
+                    try:
+                        self.submit_job(latest["id"])
+                    except (BudgetError, ValueError, anthropic.APIError):
+                        pass
+                continue
+            try:
+                self.create_conceptmap_job(module_id)
+            except anthropic.APIError as e:
+                log.warning("Concept Map für Modul %s nicht angelegt: %s", module_id, api_error_text(e))
+                return
+
+    def _store_conceptmap(self, job: dict, text: str) -> None:
+        with self.db.connect() as conn:
+            module_id = conn.execute("SELECT module_id FROM lectures WHERE id = ?",
+                                     (job["lecture_id"],)).fetchone()["module_id"]
+            known = {r["norm"] for r in conn.execute("SELECT DISTINCT norm FROM glossary_entries WHERE module_id = ?",
+                                                     (module_id,))}
+        data, warnings = conceptmap.parse(text, known)
+        self._set(job["id"], status="done", notes_md=json.dumps(data, ensure_ascii=False),
+                  warnings_json=json.dumps(warnings), error=None)
+        log.info("Concept Map (Job %s) fertig: %d Begriffe, %d Beziehungen",
+                 job["id"], len(data["nodes"]), len(data["edges"]))
+
+    def module_conceptmap(self, module_id: int) -> dict:
+        """Neueste fertige Concept Map (für die Seite aufbereitet) und Status der neuesten Fassung."""
+        latest = self.latest_conceptmap_job(module_id)
+        with self.db.connect() as conn:
+            done = conn.execute(
+                "SELECT j.* FROM jobs j JOIN lectures l ON l.id = j.lecture_id WHERE l.module_id = ?"
+                " AND j.kind = 'conceptmap' AND j.status = 'done' ORDER BY j.id DESC LIMIT 1", (module_id,)).fetchone()
+            lectures = [dict(r) for r in conn.execute(
+                "SELECT id, title FROM lectures WHERE module_id = ? ORDER BY source_filename", (module_id,))]
+        result = {"latest": latest, "map": None, "warnings": [], "updated_at": None}
+        if done and done["notes_md"]:
+            result.update(map=conceptmap.view(json.loads(done["notes_md"]), self.module_glossary(module_id), lectures),
+                          warnings=json.loads(done["warnings_json"] or "[]"), updated_at=done["updated_at"])
+        return result
+
     # ---------- Klausurvorbereitung ----------
 
     def exam_lectures(self, module_id: int) -> list[dict]:
@@ -904,6 +991,16 @@ class Service:
             try:
                 self._store_hints(job, text)
             except (json.JSONDecodeError, AttributeError) as e:
+                self._set(job["id"], status="failed", error=f"Antwort nicht lesbar: {e}")
+            return
+        if job["kind"] == "conceptmap":
+            if msg.stop_reason == "max_tokens":
+                self._set(job["id"], status="failed",
+                          error="Concept Map beim Token-Deckel abgeschnitten (CONCEPTMAP_MAX_TOKENS erhöhen).")
+                return
+            try:
+                self._store_conceptmap(job, text)
+            except (json.JSONDecodeError, AttributeError, TypeError) as e:
                 self._set(job["id"], status="failed", error=f"Antwort nicht lesbar: {e}")
             return
         if job["kind"] == "cards":

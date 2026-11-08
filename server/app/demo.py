@@ -427,6 +427,44 @@ def seed_cards_if_missing(db: Database) -> None:
                 )
 
 
+# Concept Map aus den Glossarbegriffen: (Begriff, Thema) und (von, nach, Art, Beschriftung)
+CONCEPT_NODES = [
+    ("Vektorraum", "Vektorräume"), ("Lineare Unabhängigkeit", "Vektorräume"), ("Basis", "Vektorräume"),
+    ("Dimension", "Vektorräume"), ("Eigenwert", "Eigenwerte"), ("Charakteristisches Polynom", "Eigenwerte"),
+    ("Diagonalisierbarkeit", "Eigenwerte"),
+]
+CONCEPT_EDGES = [
+    ("Vektorraum", "Lineare Unabhängigkeit", "voraussetzung", "Rahmen für"),
+    ("Lineare Unabhängigkeit", "Basis", "voraussetzung", "Bedingung für eine"),
+    ("Basis", "Dimension", "voraussetzung", "Anzahl der Elemente ist die"),
+    ("Charakteristisches Polynom", "Eigenwert", "verwendet", "Nullstellen liefern die"),
+    ("Eigenwert", "Diagonalisierbarkeit", "voraussetzung", "Eigenvektoren entscheiden über"),
+    ("Basis", "Diagonalisierbarkeit", "voraussetzung", "aus Eigenvektoren bedeutet"),
+    ("Eigenwert", "Lineare Unabhängigkeit", "verwandt", "Eigenvektoren zu verschiedenen Eigenwerten sind"),
+]
+
+
+def seed_conceptmap_if_missing(db: Database) -> None:
+    with db.connect() as conn:
+        if conn.execute("SELECT COUNT(*) FROM jobs WHERE kind = 'conceptmap'").fetchone()[0]:
+            return
+        rows = conn.execute(
+            "SELECT g.lecture_id, MAX(g.job_id) AS job_id FROM glossary_entries g JOIN lectures l ON l.id = g.lecture_id"
+            " GROUP BY g.lecture_id ORDER BY MIN(l.source_filename)").fetchall()
+        if not rows:
+            return
+        data = {"nodes": [{"norm": glossary.normalize(t), "group": g} for t, g in CONCEPT_NODES],
+                "edges": [{"from": glossary.normalize(a), "to": glossary.normalize(b), "kind": k, "label": label}
+                          for a, b, k, label in CONCEPT_EDGES]}
+        conn.execute(
+            "INSERT INTO jobs (lecture_id, kind, source_ids, status, model, request_json, pages_json,"
+            " input_tokens_est, cost_est_usd, notes_md, warnings_json, created_at, updated_at)"
+            " VALUES (?, 'conceptmap', ?, 'done', 'Beispiel', '{}', '[]', 0, 0, ?, '[]', ?, ?)",
+            (rows[-1]["lecture_id"], json.dumps([[r["lecture_id"], r["job_id"]] for r in rows]),
+             json.dumps(data, ensure_ascii=False), now(), now()),
+        )
+
+
 def seed_if_empty(db: Database) -> None:
     try:
         _seed_module(db)
@@ -434,6 +472,7 @@ def seed_if_empty(db: Database) -> None:
         seed_hints_if_missing(db)
         seed_exam_if_missing(db)
         seed_cards_if_missing(db)
+        seed_conceptmap_if_missing(db)
         refresh_sample_texts(db)
 
 

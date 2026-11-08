@@ -52,6 +52,10 @@ class Settings:
     exam_effort: str = field(default_factory=lambda: _env("EXAM_EFFORT", "high"))
     exam_max_tokens: int = field(default_factory=lambda: int(_env("EXAM_MAX_TOKENS", "32000")))
 
+    # Concept Map pro Modul (aus den Glossareinträgen).
+    conceptmap_effort: str = field(default_factory=lambda: _env("CONCEPTMAP_EFFORT", "medium"))
+    conceptmap_max_tokens: int = field(default_factory=lambda: int(_env("CONCEPTMAP_MAX_TOKENS", "16000")))
+
     # Karteikarten und Übungsaufgaben pro Vorlesung (aus Notizen + zitierten Skriptseiten).
     cards_effort: str = field(default_factory=lambda: _env("CARDS_EFFORT", "medium"))
     cards_max_tokens: int = field(default_factory=lambda: int(_env("CARDS_MAX_TOKENS", "20000")))

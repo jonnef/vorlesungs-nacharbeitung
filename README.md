@@ -170,6 +170,20 @@ Zu jedem Modul entsteht automatisch ein Glossar der wichtigsten Begriffe, Formel
   Der Watcher legt es zusätzlich als `Studium/<Modul>/Glossar.md` in iCloud ab.
 - Wird eine Vorlesung neu erstellt, ersetzt ihr neues Glossar die alten Einträge dieser Vorlesung.
 
+## Concept Map
+
+Pro Modul zeigt Modul → „Concept Map“, wie die Begriffe zusammenhängen:
+
+- Knoten sind die Glossarbegriffe (Begriffe, Formeln, Sätze) aus allen Vorlesungen, farbig nach
+  Thema. Claude ergänzt die Verbindungen („ist Voraussetzung für“, „ist Spezialfall von“, „wird
+  verwendet für“ …). Als Eingabe dient nur das kompakte Glossar, nicht die ganzen Notizen –
+  das hält die Kosten klein (grob 0,05–0,15 $ pro Fassung).
+- Die Map wird automatisch neu erstellt, sobald eine neue Vorlesung im Glossar ist (wie die
+  Klausurvorbereitung wartet sie, bis alle laufenden Notizen und Glossare fertig sind).
+- Begriff antippen oder suchen: Nachbarn werden hervorgehoben, darunter stehen Definition,
+  Verbindungen und die Vorlesungen, in denen er vorkommt. „Alle Vorlesungen“ lässt sich auf eine
+  Vorlesung einschränken, um zu sehen, was dort dazukam. Darunter gibt es alles auch als Liste.
+
 ## Lernen: Karteikarten und Übungsaufgaben
 
 Unter „Lernen“ (oben in der Leiste) liegen Karteikarten und Übungsaufgaben aller Module in
@@ -248,6 +262,8 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `AUTO_SUBMIT` | `1` | `0` = jeden Job manuell freigeben |
 | `GLOSSARY_EFFORT` | `medium` | Denkaufwand für die Glossar-Auswertung |
 | `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
+| `CONCEPTMAP_EFFORT` | `medium` | Denkaufwand für die Concept Map |
+| `CONCEPTMAP_MAX_TOKENS` | `16000` | Deckel für die Concept-Map-Antwort |
 | `CARDS_EFFORT` | `medium` | Denkaufwand für Karteikarten und Übungsaufgaben |
 | `CARDS_MAX_TOKENS` | `20000` | Deckel für die Karteikarten-Antwort |
 | `CARDS_SCRIPT_TOKENS` | `15000` | Wie viele Tokens zitierter Skriptseiten mitgeschickt werden |

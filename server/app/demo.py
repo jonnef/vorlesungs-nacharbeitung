@@ -427,6 +427,29 @@ def seed_cards_if_missing(db: Database) -> None:
                 )
 
 
+# Beispiel für eine automatisch aussortierte Karte (Vorlesung, Vorderseite, Rückseite, Zeitstempel, Grund)
+SORTED_OUT_CARD = (1, "Ab wann ist Übungsblatt 3 online?", "Ab dem Tag der Vorlesung.", "01:23:00",
+                   "Organisatorisch: Termin zum Übungsbetrieb, kein Fachinhalt.")
+
+
+def mark_cards_checked(db: Database) -> None:
+    """Vorschau: keine Prüfung im Hintergrund – Beispielkarten gelten als geprüft, eine ist aussortiert."""
+    with db.connect() as conn:
+        conn.execute("UPDATE cards SET checked_at = ? WHERE checked_at IS NULL", (now(),))
+        if conn.execute("SELECT COUNT(*) FROM cards WHERE archive_reason IS NOT NULL").fetchone()[0]:
+            return
+        index, front, back, ts, reason = SORTED_OUT_CARD
+        rows = conn.execute("SELECT id, module_id FROM lectures ORDER BY source_filename").fetchall()
+        if index >= len(rows):
+            return
+        conn.execute(
+            "INSERT INTO cards (module_id, lecture_id, kind, topic, calculator, variants_json, norm, timestamps_json,"
+            " pages_json, suspended, checked_at, archive_reason, created_at)"
+            " VALUES (?, ?, 'karte', 'Übungsbetrieb', 0, ?, ?, ?, '[]', 1, ?, ?, ?)",
+            (rows[index]["module_id"], rows[index]["id"], json.dumps([{"front": front, "back": back, "result": ""}]),
+             glossary.normalize(front), json.dumps([ts]), now(), reason, now()))
+
+
 # Concept Map aus den Glossarbegriffen: (Begriff, Thema) und (von, nach, Art, Beschriftung)
 CONCEPT_NODES = [
     ("Vektorraum", "Vektorräume"), ("Lineare Unabhängigkeit", "Vektorräume"), ("Basis", "Vektorräume"),
@@ -473,6 +496,7 @@ def seed_if_empty(db: Database) -> None:
         seed_exam_if_missing(db)
         seed_cards_if_missing(db)
         seed_conceptmap_if_missing(db)
+        mark_cards_checked(db)
         refresh_sample_texts(db)
 
 

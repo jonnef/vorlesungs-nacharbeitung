@@ -60,6 +60,9 @@ class Settings:
     cards_effort: str = field(default_factory=lambda: _env("CARDS_EFFORT", "medium"))
     cards_max_tokens: int = field(default_factory=lambda: int(_env("CARDS_MAX_TOKENS", "20000")))
     cards_script_tokens: int = field(default_factory=lambda: int(_env("CARDS_SCRIPT_TOKENS", "15000")))
+    # Automatisches Aussortieren (Organisatorisches, laut Dozent nicht klausurrelevant).
+    cardcheck_effort: str = field(default_factory=lambda: _env("CARDCHECK_EFFORT", "medium"))
+    cardcheck_max_tokens: int = field(default_factory=lambda: int(_env("CARDCHECK_MAX_TOKENS", "8000")))
     # Wie viele neue Karten pro Tag beim Lernen dazukommen (über alle Module).
     new_cards_per_day: int = field(default_factory=lambda: int(_env("NEW_CARDS_PER_DAY", "20")))
 

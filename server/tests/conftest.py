@@ -34,9 +34,11 @@ class FakeBatches:
         system = request["params"]["system"]
         is_exam = "Klausurvorbereitung" in system
         is_hints = "AUSDRÜCKLICH über die Klausur" in system
-        is_cards = "Karteikarte" in system
+        is_cardcheck = "räumst die Lernkarten" in system
+        is_cards = "Karteikarte" in system and not is_cardcheck
         is_conceptmap = "Concept Map" in system
-        text = (self.parent.conceptmap_json if is_conceptmap else self.parent.cards_json if is_cards
+        text = (self.parent.cardcheck_answer(request["params"]) if is_cardcheck
+                else self.parent.conceptmap_json if is_conceptmap else self.parent.cards_json if is_cards
                 else self.parent.hints_json if is_hints else self.parent.glossary_json if is_glossary
                 else self.parent.exam_md if is_exam else self.parent.notes)
         msg = SimpleNamespace(
@@ -99,6 +101,16 @@ class FakeClient:
             ]})
         self.counted = []
         self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self))
+
+    @staticmethod
+    def cardcheck_answer(params):
+        """Sortiert Karten mit „Anmeldung“ aus – plus eine unbekannte ID, die verworfen werden muss."""
+        import re
+        content = params["messages"][0]["content"]
+        flagged = [{"id": int(i), "grund": "organisatorisch", "begruendung": "Termin, kein Fachinhalt."}
+                   for i, front in re.findall(r'<karte id="(\d+)"[^>]*>\nVorderseite: ([^\n]*)', content)
+                   if "Anmeldung" in front]
+        return json.dumps({"aussortieren": flagged + [{"id": 99999, "grund": "organisatorisch", "begruendung": ""}]})
 
     def _count(self, **params):
         self.counted.append(params)

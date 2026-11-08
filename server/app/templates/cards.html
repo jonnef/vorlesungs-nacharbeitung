@@ -21,6 +21,9 @@
   .badge.karte { color:var(--accent); } .badge.aufgabe { color:#7c3aed; } .badge.calc { color:var(--warn); }
   .row-actions { display:flex; gap:6px; flex:none; }
   .row-actions button { font-size:14px; padding:4px 10px; }
+  .badge.reason { color:var(--muted); }
+  .check-status { font-size:14px; margin:-4px 0 12px; display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; }
+  .check-status button.link { background:none; border:0; padding:0; color:var(--accent); text-decoration:underline; font-size:14px; }
   button.danger { background:transparent; color:var(--err); border-color:var(--err); }
   @media (max-width: 560px) { .card-row { flex-direction:column; } }
 </style>
@@ -43,6 +46,21 @@
   <noscript><input type="submit" value="Anzeigen"></noscript>
 </form>
 
+<div class="check-status muted">
+  {% if check.running %}<span class="status s-submitted">läuft</span> Karten werden gerade geprüft – Organisatorisches und vom Dozenten ausgeschlossene Themen werden archiviert.
+  {% elif check.unchecked %}{{ check.unchecked }} Karte(n) werden demnächst automatisch geprüft.
+  {% else %}Alle Karten sind geprüft{% if check.sorted_out %} · {{ check.sorted_out }} automatisch aussortiert
+    {%- if not archived %} (<a href="{{ request.state.base }}/lernen/karten?{{ mq }}archiv=1">ansehen</a>){% endif %}{% endif %}.{% endif %}
+  {% if check.error %}<span class="err">Letzte Prüfung fehlgeschlagen: {{ check.error }}</span>{% endif %}
+  {% if not demo and not check.running %}
+  <form method="post" action="{{ request.state.base }}/lernen/karten/pruefen" class="inline"
+        onsubmit="return confirm('Alle aktiven Karten{% if module_id %} dieses Moduls{% endif %} erneut prüfen lassen? Das kostet ein paar Cent.')">
+    <input type="hidden" name="modul" value="{{ module_id or '' }}"><input type="hidden" name="back" value="{{ back }}">
+    <button class="link">Erneut prüfen</button>
+  </form>
+  {% endif %}
+</div>
+
 <div class="card" id="list">
   {% for c in items %}
   <div class="card-row" data-search="{{ (c.variants[0].front ~ ' ' ~ c.topic ~ ' ' ~ c.lecture_title)|lower }}">
@@ -51,11 +69,13 @@
       <div class="meta">
         <span class="badge {{ c.kind }}">{{ "Aufgabe" if c.kind == "aufgabe" else "Karte" }}</span>
         {% if c.calculator %}<span class="badge calc">Taschenrechner</span>{% endif %}
+        {% if c.archive_reason %}<span class="badge reason" title="Automatisch aussortiert">{{ c.archive_reason.split(":")[0] }}</span>{% endif %}
         <span>{{ c.module_name }} · <a href="{{ request.state.base }}/lectures/{{ c.lecture_id }}">{{ c.lecture_title }}</a>{% if c.topic %} · {{ c.topic }}{% endif %} ·
           {%- if not c.last_reviewed %} neu
           {%- elif c.due and c.due <= today %} fällig
           {%- else %} wieder am {{ c.due[8:10] }}.{{ c.due[5:7] }}.{% endif %}</span>
       </div>
+      {% if c.archive_reason and ":" in c.archive_reason %}<div class="meta">Grund: {{ c.archive_reason.split(":", 1)[1].strip() }}</div>{% endif %}
     </div>
     {% if not demo %}
     <div class="row-actions">

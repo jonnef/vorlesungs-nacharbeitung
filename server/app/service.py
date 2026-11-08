@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import cards, conceptmap, exam, glossary, hints, lecture_slides, pricing
+from . import cardcheck, cards, conceptmap, exam, glossary, hints, lecture_slides, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -578,9 +578,9 @@ class Service:
             lec = conn.execute("SELECT module_id, duration_sec FROM lectures WHERE id = ?",
                                (job["lecture_id"],)).fetchone()
             items = cards.parse(text, lec["duration_sec"], {tuple(p) for p in json.loads(job["pages_json"])})
-            # Gelöschte Karten bleiben als Merker stehen, damit sie nicht neu entstehen.
-            conn.execute("DELETE FROM cards WHERE lecture_id = ? AND last_reviewed IS NULL AND deleted_at IS NULL",
-                         (job["lecture_id"],))
+            # Gelöschte und archivierte Karten bleiben stehen, damit sie nicht neu entstehen.
+            conn.execute("DELETE FROM cards WHERE lecture_id = ? AND last_reviewed IS NULL AND deleted_at IS NULL"
+                         " AND suspended = 0", (job["lecture_id"],))
             known = {r["norm"] for r in conn.execute("SELECT norm FROM cards WHERE lecture_id = ?",
                                                      (job["lecture_id"],))}
             new = [c for c in items if c["norm"] not in known]
@@ -679,8 +679,115 @@ class Service:
         return state
 
     def set_card_archived(self, card_id: int, archived: bool) -> None:
+        """Von Hand archivieren bzw. wiederherstellen; ein automatischer Grund entfällt dabei.
+        Wiederhergestellte Karten gelten als geprüft und werden nicht erneut aussortiert."""
         with self.db.connect() as conn:
-            conn.execute("UPDATE cards SET suspended = ? WHERE id = ?", (int(archived), card_id))
+            conn.execute("UPDATE cards SET suspended = ?, archive_reason = NULL, checked_at = COALESCE(checked_at, ?),"
+                         " kept = 1 WHERE id = ?", (int(archived), now(), card_id))
+
+    # ---------- Karten aussortieren ----------
+
+    MAX_CARDS_PER_CHECK = 400
+
+    def _cards_to_check(self, module_id: int) -> list[int]:
+        with self.db.connect() as conn:
+            return [r["id"] for r in conn.execute(
+                "SELECT id FROM cards WHERE module_id = ? AND suspended = 0 AND deleted_at IS NULL"
+                " AND checked_at IS NULL ORDER BY id LIMIT ?", (module_id, self.MAX_CARDS_PER_CHECK))]
+
+    def _latest_cardcheck_job(self, module_id: int) -> dict | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT j.* FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'cardcheck' ORDER BY j.id DESC LIMIT 1", (module_id,)).fetchone()
+        return dict(row) if row else None
+
+    def create_cardcheck_job(self, module_id: int, recheck: bool = False) -> int | None:
+        """Prüft die noch nicht geprüften Karten des Moduls; `recheck` nimmt alle aktiven Karten erneut dazu."""
+        latest = self._latest_cardcheck_job(module_id)
+        if latest and latest["status"] in ("estimated", "blocked", "submitted"):
+            return None  # läuft schon
+        if recheck:
+            with self.db.connect() as conn:
+                conn.execute("UPDATE cards SET checked_at = NULL WHERE module_id = ? AND suspended = 0"
+                             " AND deleted_at IS NULL AND kept = 0", (module_id,))
+        ids = self._cards_to_check(module_id)
+        if not ids:
+            return None
+        items = [self.card(i) for i in ids]
+        with self.db.connect() as conn:
+            module = conn.execute("SELECT name FROM modules WHERE id = ?", (module_id,)).fetchone()["name"]
+        by_lecture: dict[int, list[dict]] = {}
+        for h in self.module_hints(module_id):
+            by_lecture.setdefault(h["lecture_id"], []).append(h)
+        hint_text = "\n".join(f"{hs[0]['lecture_title']}:\n{hints.for_exam_prompt(hs)}" for hs in by_lecture.values())
+        params = cardcheck.build_request(model=self.settings.model, effort=self.settings.cardcheck_effort,
+                                         max_tokens=self.settings.cardcheck_max_tokens, module=module,
+                                         cards=items, hints=hint_text)
+        return self._insert_job(items[-1]["lecture_id"], "cardcheck", params, [], source_ids=ids)
+
+    def ensure_cardcheck_jobs(self) -> None:
+        """Prüft neue Karten einmal automatisch – sobald im Modul keine Notizen, Karten oder
+        Prüfungshinweise mehr entstehen. Ein fehlgeschlagener Lauf wird nicht automatisch wiederholt."""
+        with self.db.connect() as conn:
+            modules = [r["module_id"] for r in conn.execute(
+                "SELECT DISTINCT module_id FROM cards WHERE suspended = 0 AND deleted_at IS NULL AND checked_at IS NULL")]
+            busy = {r["module_id"] for r in conn.execute(
+                "SELECT DISTINCT l.module_id FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE j.kind IN ('notes', 'cards', 'hints', 'cardcheck')"
+                " AND j.status IN ('estimated', 'blocked', 'submitted')")}
+            blocked = [r["id"] for r in conn.execute("SELECT id FROM jobs WHERE kind = 'cardcheck' AND status = 'blocked'")]
+        if self.settings.auto_submit:
+            for job_id in blocked:
+                try:
+                    self.submit_job(job_id)
+                except (BudgetError, ValueError, anthropic.APIError):
+                    break
+        for module_id in modules:
+            if module_id in busy:
+                continue
+            latest = self._latest_cardcheck_job(module_id)
+            if latest and latest["status"] == "failed" and \
+                    json.loads(latest["source_ids"] or "[]") == self._cards_to_check(module_id):
+                continue
+            try:
+                self.create_cardcheck_job(module_id)
+            except anthropic.APIError as e:
+                log.warning("Kartenprüfung für Modul %s nicht angelegt: %s", module_id, api_error_text(e))
+                return
+
+    def _store_cardcheck(self, job: dict, text: str) -> None:
+        checked = json.loads(job["source_ids"] or "[]")
+        flagged = cardcheck.parse(text, set(checked))
+        with self.db.connect() as conn:
+            # Nur Karten anfassen, die seitdem nicht von Hand geändert oder gelöscht wurden.
+            for card_id, reason in flagged.items():
+                conn.execute("UPDATE cards SET suspended = 1, archive_reason = ? WHERE id = ? AND suspended = 0"
+                             " AND deleted_at IS NULL AND checked_at IS NULL", (reason, card_id))
+            conn.executemany("UPDATE cards SET checked_at = ? WHERE id = ? AND checked_at IS NULL",
+                             [(now(), i) for i in checked])
+        self._set(job["id"], status="done", error=None)
+        log.info("Kartenprüfung (Job %s): %d von %d Karten aussortiert", job["id"], len(flagged), len(checked))
+
+    def cardcheck_status(self, module_id: int | None = None) -> dict:
+        """Laufende Prüfungen und Zahl automatisch aussortierter Karten (für „Karten verwalten“)."""
+        where, args = ("AND l.module_id = ?", [module_id]) if module_id else ("", [])
+        cwhere = "AND module_id = ?" if module_id else ""
+        with self.db.connect() as conn:
+            running = conn.execute(
+                "SELECT COUNT(*) AS c FROM jobs j JOIN lectures l ON l.id = j.lecture_id WHERE j.kind = 'cardcheck'"
+                f" AND j.status IN ('estimated', 'blocked', 'submitted') {where}", args).fetchone()["c"]
+            failed = conn.execute(
+                "SELECT j.error FROM jobs j JOIN lectures l ON l.id = j.lecture_id WHERE j.kind = 'cardcheck'"
+                f" {where} ORDER BY j.id DESC LIMIT 1", args).fetchone()
+            sorted_out = conn.execute(
+                "SELECT COUNT(*) AS c FROM cards WHERE archive_reason IS NOT NULL AND suspended = 1"
+                f" AND deleted_at IS NULL {cwhere}", args).fetchone()["c"]
+            unchecked = conn.execute(
+                "SELECT COUNT(*) AS c FROM cards WHERE checked_at IS NULL AND suspended = 0"
+                f" AND deleted_at IS NULL {cwhere}", args).fetchone()["c"]
+        return {"running": running, "sorted_out": sorted_out, "unchecked": unchecked,
+                "error": failed["error"] if failed else None}
 
     def delete_card(self, card_id: int) -> None:
         """Endgültig löschen: aus Lernen, Archiv und Listen entfernen; der Merker verhindert,
@@ -1024,6 +1131,16 @@ class Service:
                 return
             try:
                 self._store_conceptmap(job, text)
+            except (json.JSONDecodeError, AttributeError, TypeError) as e:
+                self._set(job["id"], status="failed", error=f"Antwort nicht lesbar: {e}")
+            return
+        if job["kind"] == "cardcheck":
+            if msg.stop_reason == "max_tokens":
+                self._set(job["id"], status="failed",
+                          error="Kartenprüfung beim Token-Deckel abgeschnitten (CARDCHECK_MAX_TOKENS erhöhen).")
+                return
+            try:
+                self._store_cardcheck(job, text)
             except (json.JSONDecodeError, AttributeError, TypeError) as e:
                 self._set(job["id"], status="failed", error=f"Antwort nicht lesbar: {e}")
             return

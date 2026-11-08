@@ -45,6 +45,10 @@ Eigenwerte, kürzbare Brüche usw.), sofern die Aufgabe nicht gerade das Runden 
 kann (z. B. krumme Dezimalzahlen, Logarithmen, Wurzeln ohne glattes Ergebnis). Bevorzuge \
 Aufgaben, die mit Stift und Papier gehen.
 
+Nur Fachinhalt: keine Karten zu Organisatorischem (Termine, Abgaben, Anmeldung, \
+Klausurtermin, Übungsbetrieb, Literatur) und keine Karten ohne Lerninhalt (z. B. „Worum ging \
+es in der Vorlesung?“).
+
 Mischung: Richte dich nach dem Stoff. Bei Rechenstoff (Mathematik, Statistik, Physik, \
 Technik, Rechnungswesen …) etwa 4 bis 8 Aufgaben und 8 bis 15 Karten; bei Stoff ohne \
 Rechnungen nur Karten (etwa 10 bis 25) und keine Aufgaben. Wähle das Wichtigste, nicht jedes \

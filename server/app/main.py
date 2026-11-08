@@ -42,7 +42,7 @@ def _worker(stop: threading.Event) -> None:
         # Jeder Schritt einzeln, damit ein Fehler (z. B. beim Glossar) die übrigen nicht blockiert.
         for step in (service.poll_jobs, service.ensure_glossary_jobs, service.ensure_conceptmap_jobs,
                      service.ensure_hint_jobs,
-                     service.ensure_card_jobs, service.ensure_exam_jobs):
+                     service.ensure_card_jobs, service.ensure_cardcheck_jobs, service.ensure_exam_jobs):
             try:
                 step()
             except Exception:
@@ -547,7 +547,22 @@ def cards_page(request: Request, modul: str = "", archiv: str = ""):
         "active_count": len(service.list_cards(module_id, False)) if archived else len(items),
         "archived_count": service.archived_count(module_id),
         "all_modules": _all("SELECT id, name FROM modules ORDER BY name"), "today": date.today().isoformat(),
-        "b": _budget()})
+        "check": service.cardcheck_status(module_id), "b": _budget()})
+
+
+@app.post("/lernen/karten/pruefen", dependencies=[Depends(web_auth)])
+def cards_recheck(request: Request, modul: str = Form(""), back: str = Form("/lernen/karten")):
+    """Alle aktiven Karten (eines Moduls oder aller Module) erneut aussortieren lassen."""
+    if modul.isdigit():
+        module_ids = [_get("SELECT id FROM modules WHERE id = ?", int(modul))["id"]]
+    else:
+        module_ids = [r["module_id"] for r in _all("SELECT DISTINCT module_id FROM cards WHERE deleted_at IS NULL")]
+    try:
+        for module_id in module_ids:
+            service.create_cardcheck_job(module_id, recheck=True)
+    except anthropic.APIError as e:
+        raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
+    return _redirect(request, _safe_back(back, "/lernen/karten"))
 
 
 @app.post("/modules/{module_id}/scripts", dependencies=[Depends(web_auth)])

@@ -164,6 +164,26 @@ Zu jedem Modul entsteht automatisch ein Glossar der wichtigsten Begriffe, Formel
   Der Watcher legt es zusätzlich als `Studium/<Modul>/Glossar.md` in iCloud ab.
 - Wird eine Vorlesung neu erstellt, ersetzt ihr neues Glossar die alten Einträge dieser Vorlesung.
 
+## Lernen: Karteikarten und Übungsaufgaben
+
+Unter „Lernen“ (oben in der Leiste) liegen Karteikarten und Übungsaufgaben aller Module in
+einem gemeinsamen Stapel:
+
+- Sobald die Notizen einer Vorlesung fertig sind, erstellt Claude daraus Karteikarten
+  (Frage → Antwort) und – bei Rechenstoff wie Mathe – Übungsaufgaben mit vollständigem
+  Lösungsweg. Als Kontext dienen die Notizen und die darin zitierten Skriptseiten.
+- Jede Aufgabe gibt es in 3 Varianten mit anderen Zahlen; bei jeder Wiederholung kommt die
+  nächste, damit man den Rechenweg übt und nicht das Ergebnis auswendig lernt.
+- Aufgaben, die einen Taschenrechner brauchen, sind markiert. Mit „Ohne Taschenrechner“ blendet
+  man sie aus, z. B. unterwegs. Außerdem lässt sich nach Modul und Art (Karten/Aufgaben) filtern.
+- Wiederholt wird wie bei Anki: Lösung aufdecken, dann „Nochmal“, „Schwer“, „Gut“ oder
+  „Leicht“ (auch mit den Tasten 1–4). Pro Tag kommen höchstens `NEW_CARDS_PER_DAY` neue Karten dazu.
+- Eine fehlerhafte Karte lässt sich aussetzen; sie erscheint dann unten unter „Ausgesetzte Karten“.
+- Wird eine Vorlesung neu erstellt, werden ihre noch nie gelernten Karten ersetzt; schon gelernte
+  bleiben samt Lernstand erhalten.
+- **Kosten:** grob 0,05–0,20 $ pro Vorlesung (Batch). Auch für bereits vorhandene Vorlesungen
+  werden einmalig Karten erstellt – das Monatsbudget gilt wie immer als harte Grenze.
+
 ## Prüfungshinweise
 
 Getrennt von der Klausurvorbereitung (die gewichtet und zusammenfasst) gibt es pro Modul die
@@ -222,6 +242,10 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `AUTO_SUBMIT` | `1` | `0` = jeden Job manuell freigeben |
 | `GLOSSARY_EFFORT` | `medium` | Denkaufwand für die Glossar-Auswertung |
 | `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
+| `CARDS_EFFORT` | `medium` | Denkaufwand für Karteikarten und Übungsaufgaben |
+| `CARDS_MAX_TOKENS` | `20000` | Deckel für die Karteikarten-Antwort |
+| `CARDS_SCRIPT_TOKENS` | `15000` | Wie viele Tokens zitierter Skriptseiten mitgeschickt werden |
+| `NEW_CARDS_PER_DAY` | `20` | Neue Karten pro Tag beim Lernen (über alle Module) |
 | `HINTS_EFFORT` | `medium` | Denkaufwand für die Prüfungshinweise |
 | `HINTS_MAX_TOKENS` | `8000` | Deckel für die Prüfungshinweise einer Vorlesung |
 | `EXAM_EFFORT` | `high` | Denkaufwand für die Klausurvorbereitung |

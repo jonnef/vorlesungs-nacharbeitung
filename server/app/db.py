@@ -117,6 +117,42 @@ CREATE TABLE IF NOT EXISTS lecture_slide_pages (
     text TEXT NOT NULL
 );
 
+-- Lernen: Karteikarten (kind 'karte') und Übungsaufgaben ('aufgabe') aller Module in einem Pool.
+-- variants_json: [{front, back, result}, …] – Aufgaben in mehreren Varianten mit anderen Zahlen.
+-- Lernstand (SM-2): due (Datum), interval_days, ease, reps, lapses; views zählt Wiederholungen
+-- (wählt die Variante); suspended = vom Nutzer ausgesetzt (z. B. fehlerhafte Karte).
+CREATE TABLE IF NOT EXISTS cards (
+    id INTEGER PRIMARY KEY,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    lecture_id INTEGER NOT NULL REFERENCES lectures(id) ON DELETE CASCADE,
+    job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    calculator INTEGER NOT NULL,
+    variants_json TEXT NOT NULL,
+    norm TEXT NOT NULL,
+    timestamps_json TEXT NOT NULL,
+    pages_json TEXT NOT NULL,
+    due TEXT,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    ease REAL NOT NULL DEFAULT 2.5,
+    reps INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0,
+    views INTEGER NOT NULL DEFAULT 0,
+    last_reviewed TEXT,
+    suspended INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS card_reviews (
+    id INTEGER PRIMARY KEY,
+    card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    grade INTEGER NOT NULL,
+    first INTEGER NOT NULL,
+    reviewed_on TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS usage_log (
     id INTEGER PRIMARY KEY,
     job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,

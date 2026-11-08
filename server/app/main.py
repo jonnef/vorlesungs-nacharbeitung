@@ -7,9 +7,9 @@ import secrets
 import tempfile
 import threading
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import anthropic
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -18,7 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import demo, exam, glossary, hints, ordering, search, slides
+from . import cards, demo, exam, glossary, hints, ordering, search, slides
 from .config import settings
 from .db import Database
 from .render import render_inline, render_notes
@@ -41,7 +41,7 @@ def _worker(stop: threading.Event) -> None:
     while not stop.wait(settings.poll_interval_sec):
         # Jeder Schritt einzeln, damit ein Fehler (z. B. beim Glossar) die übrigen nicht blockiert.
         for step in (service.poll_jobs, service.ensure_glossary_jobs, service.ensure_hint_jobs,
-                     service.ensure_exam_jobs):
+                     service.ensure_card_jobs, service.ensure_exam_jobs):
             try:
                 step()
             except Exception:
@@ -319,7 +319,8 @@ def module_page(request: Request, module_id: int):
         "exam": service.module_exam(module_id),
         "open_slides": service.lecture_slides_of(module_id=module_id),
         "hint_count": len(service.module_hints(module_id)),
-        "hints_status": service.hints_status(module_id)})
+        "hints_status": service.hints_status(module_id),
+        "cards_status": service.cards_status(module_id)})
 
 
 @app.get("/modules/{module_id}/suche", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
@@ -435,6 +436,67 @@ def glossary_md(module_id: int):
     filename = quote(f"Glossar {module['name']}.md")
     return PlainTextResponse(_glossary_markdown(module), media_type="text/markdown; charset=utf-8",
                              headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
+
+
+# ---------- Lernen ----------
+
+def _learn_filters(modul: str, art: str, ohne_tr: str) -> dict:
+    """Auswahl beim Lernen: Modul (leer = alle), Art (leer = beides), nur ohne Taschenrechner."""
+    return {"modul": int(modul) if modul.isdigit() else None,
+            "art": art if art in cards.KINDS else "",
+            "ohne_tr": ohne_tr in ("1", "on", "true")}
+
+
+def _learn_query(f: dict) -> str:
+    params = {k: v for k, v in (("modul", f["modul"] or ""), ("art", f["art"]), ("ohne_tr", "1" if f["ohne_tr"] else ""))
+              if v}
+    return ("?" + urlencode(params)) if params else ""
+
+
+@app.get("/lernen", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def learn_page(request: Request, modul: str = "", art: str = "", ohne_tr: str = "", nr: int = 0):
+    f = _learn_filters(modul, art, ohne_tr)
+    today = date.today()
+    sel = {"module_id": f["modul"], "kind": f["art"] or None, "no_calculator": f["ohne_tr"]}
+    card = service.next_card(today, **sel)
+    demo_count = 0
+    if settings.demo_mode:
+        # Vorschau: Lernstand wird nicht gespeichert, „Nächste Karte“ blättert durch die Beispiele.
+        where, args = service._card_where(sel["module_id"], sel["kind"], sel["no_calculator"])
+        ids = [r["id"] for r in _all(f"SELECT c.id FROM cards c WHERE {where} ORDER BY c.id", *args)]
+        demo_count = len(ids)
+        card = service.card(ids[nr % len(ids)]) if ids else None
+    view = None
+    if card:
+        variant_index, variant = cards.variant_for(card)
+        front, back = cards.card_markdown(card, variant)
+        view = {"front": render_notes(front), "back": render_notes(back), "variant": variant_index + 1,
+                "variants": len(card["variants"]),
+                "grades": [(g, label, cards.interval_label(cards.schedule(card, g, today)["interval_days"]))
+                           for g, label in cards.GRADES.items()]}
+    return templates.TemplateResponse(request, "learn.html", {
+        "f": f, "query": _learn_query(f), "card": card, "view": view, "nr": nr, "demo_count": demo_count,
+        "counts": service.learning_counts(today, **sel), "modules": service.learning_modules(today),
+        "all_modules": _all("SELECT id, name FROM modules ORDER BY name"),
+        "suspended": service.suspended_cards(f["modul"]), "b": _budget()})
+
+
+@app.post("/lernen/{card_id}/bewerten", dependencies=[Depends(web_auth)])
+def learn_grade(request: Request, card_id: int, grade: int = Form(...), modul: str = Form(""),
+                art: str = Form(""), ohne_tr: str = Form("")):
+    try:
+        service.review_card(card_id, grade, date.today())
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return _redirect(request, "/lernen" + _learn_query(_learn_filters(modul, art, ohne_tr)))
+
+
+@app.post("/lernen/{card_id}/aussetzen", dependencies=[Depends(web_auth)])
+def learn_suspend(request: Request, card_id: int, wieder: str = Form(""), modul: str = Form(""),
+                  art: str = Form(""), ohne_tr: str = Form("")):
+    _get("SELECT id FROM cards WHERE id = ?", card_id)
+    service.set_card_suspended(card_id, not wieder)
+    return _redirect(request, "/lernen" + _learn_query(_learn_filters(modul, art, ohne_tr)))
 
 
 @app.post("/modules/{module_id}/scripts", dependencies=[Depends(web_auth)])

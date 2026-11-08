@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import exam, glossary, hints, lecture_slides, pricing
+from . import cards, exam, glossary, hints, lecture_slides, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -540,6 +540,177 @@ class Service:
                 (module_id,)).fetchone()["c"]
         return {"lectures": done, "pending": running}
 
+    # ---------- Lernen: Karteikarten und Übungsaufgaben ----------
+
+    def ensure_card_jobs(self) -> None:
+        """Erstellt für jede fertige Notiz (neueste Fassung je Vorlesung) einmal Karten und Aufgaben."""
+        with self.db.connect() as conn:
+            pending = conn.execute(
+                "SELECT n.id, n.lecture_id, n.notes_md, n.pages_json, l.title, l.module_id FROM jobs n"
+                " JOIN lectures l ON l.id = n.lecture_id"
+                " WHERE n.kind = 'notes' AND n.status = 'done' AND n.notes_md IS NOT NULL"
+                " AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = n.lecture_id AND kind = 'notes')"
+                " AND NOT EXISTS (SELECT 1 FROM jobs c WHERE c.kind = 'cards' AND c.source_job_id = n.id)"
+            ).fetchall()
+            blocked = [r["id"] for r in conn.execute("SELECT id FROM jobs WHERE kind = 'cards' AND status = 'blocked'")]
+        for n in pending:
+            pages = cards.cited_pages(n["notes_md"], self.module_pages(n["module_id"]),
+                                      self.settings.cards_script_tokens)
+            params = cards.build_request(
+                model=self.settings.model, effort=self.settings.cards_effort,
+                max_tokens=self.settings.cards_max_tokens, title=n["title"], notes=n["notes_md"], pages=pages,
+            )
+            try:
+                self._insert_job(n["lecture_id"], "cards", params, json.loads(n["pages_json"]), source_job_id=n["id"])
+            except anthropic.APIError as e:
+                log.warning("Karteikarten für Vorlesung %s nicht angelegt: %s", n["lecture_id"], api_error_text(e))
+                return
+        if self.settings.auto_submit:
+            for job_id in blocked:
+                try:
+                    self.submit_job(job_id)
+                except (BudgetError, ValueError, anthropic.APIError):
+                    break
+
+    def _store_cards(self, job: dict, text: str) -> None:
+        """Ersetzt die noch nie gelernten Karten der Vorlesung; schon gelernte bleiben samt Lernstand."""
+        with self.db.connect() as conn:
+            lec = conn.execute("SELECT module_id, duration_sec FROM lectures WHERE id = ?",
+                               (job["lecture_id"],)).fetchone()
+            items = cards.parse(text, lec["duration_sec"], {tuple(p) for p in json.loads(job["pages_json"])})
+            conn.execute("DELETE FROM cards WHERE lecture_id = ? AND last_reviewed IS NULL", (job["lecture_id"],))
+            known = {r["norm"] for r in conn.execute("SELECT norm FROM cards WHERE lecture_id = ?",
+                                                     (job["lecture_id"],))}
+            new = [c for c in items if c["norm"] not in known]
+            conn.executemany(
+                "INSERT INTO cards (module_id, lecture_id, job_id, kind, topic, calculator, variants_json, norm,"
+                " timestamps_json, pages_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(lec["module_id"], job["lecture_id"], job["id"], c["kind"], c["topic"], int(c["calculator"]),
+                  json.dumps(c["variants"]), c["norm"], json.dumps(c["timestamps"]), json.dumps(c["pages"]), now())
+                 for c in new],
+            )
+        self._set(job["id"], status="done", error=None)
+        log.info("Karteikarten (Job %s) fertig: %d neu", job["id"], len(new))
+
+    @staticmethod
+    def _card_where(module_id: int | None, kind: str | None, no_calculator: bool) -> tuple[str, list]:
+        where, args = ["c.suspended = 0"], []
+        if module_id:
+            where.append("c.module_id = ?")
+            args.append(module_id)
+        if kind in cards.KINDS:
+            where.append("c.kind = ?")
+            args.append(kind)
+        if no_calculator:
+            where.append("c.calculator = 0")
+        return " AND ".join(where), args
+
+    def new_cards_left_today(self, today) -> int:
+        with self.db.connect() as conn:
+            seen = conn.execute("SELECT COUNT(*) AS c FROM card_reviews WHERE first = 1 AND reviewed_on = ?",
+                                (today.isoformat(),)).fetchone()["c"]
+        return max(0, self.settings.new_cards_per_day - seen)
+
+    def learning_counts(self, today, module_id: int | None = None, kind: str | None = None,
+                        no_calculator: bool = False) -> dict:
+        """Fällige Wiederholungen, heute noch mögliche neue Karten und Gesamtzahl für die Auswahl."""
+        where, args = self._card_where(module_id, kind, no_calculator)
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total,"
+                " COALESCE(SUM(c.last_reviewed IS NOT NULL AND c.due <= ?), 0) AS due,"
+                " COALESCE(SUM(c.last_reviewed IS NULL), 0) AS new"
+                f" FROM cards c WHERE {where}", [today.isoformat(), *args]).fetchone()
+            reviewed = conn.execute("SELECT COUNT(*) AS c FROM card_reviews WHERE reviewed_on = ?",
+                                    (today.isoformat(),)).fetchone()["c"]
+        return {"total": row["total"], "due": row["due"], "new_total": row["new"],
+                "new": min(row["new"], self.new_cards_left_today(today)), "reviewed_today": reviewed}
+
+    def next_card(self, today, module_id: int | None = None, kind: str | None = None,
+                  no_calculator: bool = False) -> dict | None:
+        """Reihenfolge: fällige Wiederholungen, dann neue Karten (Tageslimit), dann heute vergessene."""
+        where, args = self._card_where(module_id, kind, no_calculator)
+        t = today.isoformat()
+        queries = [
+            ("c.last_reviewed IS NOT NULL AND c.due <= ? AND substr(c.last_reviewed, 1, 10) < ?",
+             [t, t], "c.due, c.id"),
+        ]
+        if self.new_cards_left_today(today):
+            queries.append(("c.last_reviewed IS NULL", [], "c.lecture_id, c.id"))
+        queries.append(("c.last_reviewed IS NOT NULL AND c.due <= ?", [t], "c.last_reviewed, c.id"))
+        with self.db.connect() as conn:
+            for cond, extra, order in queries:
+                row = conn.execute(f"SELECT c.id FROM cards c WHERE {where} AND {cond} ORDER BY {order} LIMIT 1",
+                                   [*args, *extra]).fetchone()
+                if row:
+                    return self.card(row["id"])
+        return None
+
+    def card(self, card_id: int) -> dict | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT c.*, l.title AS lecture_title, m.name AS module_name FROM cards c"
+                " JOIN lectures l ON l.id = c.lecture_id JOIN modules m ON m.id = c.module_id WHERE c.id = ?",
+                (card_id,)).fetchone()
+        if not row:
+            return None
+        c = dict(row)
+        c["variants"] = json.loads(c.pop("variants_json"))
+        c["timestamps"] = json.loads(c.pop("timestamps_json"))
+        c["pages"] = json.loads(c.pop("pages_json"))
+        return c
+
+    def review_card(self, card_id: int, grade: int, today) -> dict:
+        card = self.card(card_id)
+        if not card:
+            raise ValueError("Karte nicht gefunden.")
+        state = cards.schedule(card, grade, today)
+        with self.db.connect() as conn:
+            conn.execute(
+                "UPDATE cards SET reps = ?, interval_days = ?, ease = ?, lapses = ?, due = ?, views = views + 1,"
+                " last_reviewed = ? WHERE id = ?",
+                (state["reps"], state["interval_days"], state["ease"], state["lapses"], state["due"],
+                 datetime.now().isoformat(timespec="seconds"), card_id))
+            conn.execute(
+                "INSERT INTO card_reviews (card_id, grade, first, reviewed_on, created_at) VALUES (?, ?, ?, ?, ?)",
+                (card_id, grade, int(card["last_reviewed"] is None), today.isoformat(), now()))
+        return state
+
+    def set_card_suspended(self, card_id: int, suspended: bool) -> None:
+        with self.db.connect() as conn:
+            conn.execute("UPDATE cards SET suspended = ? WHERE id = ?", (int(suspended), card_id))
+
+    def learning_modules(self, today) -> list[dict]:
+        """Übersicht je Modul: Karten, Aufgaben, fällig, neu, ausgesetzt."""
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT m.id, m.name,"
+                " COALESCE(SUM(c.kind = 'karte' AND c.suspended = 0), 0) AS karten,"
+                " COALESCE(SUM(c.kind = 'aufgabe' AND c.suspended = 0), 0) AS aufgaben,"
+                " COALESCE(SUM(c.suspended = 0 AND c.last_reviewed IS NOT NULL AND c.due <= ?), 0) AS due,"
+                " COALESCE(SUM(c.suspended = 0 AND c.last_reviewed IS NULL), 0) AS new,"
+                " COALESCE(SUM(c.suspended), 0) AS suspended"
+                " FROM modules m JOIN cards c ON c.module_id = m.id GROUP BY m.id ORDER BY m.name",
+                (today.isoformat(),)).fetchall()
+        return [dict(r) for r in rows]
+
+    def cards_status(self, module_id: int) -> dict:
+        with self.db.connect() as conn:
+            total = conn.execute("SELECT COUNT(*) AS c FROM cards WHERE module_id = ? AND suspended = 0",
+                                 (module_id,)).fetchone()["c"]
+            running = conn.execute(
+                "SELECT COUNT(*) AS c FROM jobs j JOIN lectures l ON l.id = j.lecture_id"
+                " WHERE l.module_id = ? AND j.kind = 'cards' AND j.status IN ('estimated', 'blocked', 'submitted')",
+                (module_id,)).fetchone()["c"]
+        return {"total": total, "pending": running}
+
+    def suspended_cards(self, module_id: int | None = None) -> list[dict]:
+        where, args = ("WHERE c.suspended = 1 AND c.module_id = ?", [module_id]) if module_id else (
+            "WHERE c.suspended = 1", [])
+        with self.db.connect() as conn:
+            ids = [r["id"] for r in conn.execute(f"SELECT c.id FROM cards c {where} ORDER BY c.id", args)]
+        return [self.card(i) for i in ids]
+
     # ---------- Klausurvorbereitung ----------
 
     def exam_lectures(self, module_id: int) -> list[dict]:
@@ -732,6 +903,16 @@ class Service:
                 return
             try:
                 self._store_hints(job, text)
+            except (json.JSONDecodeError, AttributeError) as e:
+                self._set(job["id"], status="failed", error=f"Antwort nicht lesbar: {e}")
+            return
+        if job["kind"] == "cards":
+            if msg.stop_reason == "max_tokens":
+                self._set(job["id"], status="failed",
+                          error="Karteikarten beim Token-Deckel abgeschnitten (CARDS_MAX_TOKENS erhöhen).")
+                return
+            try:
+                self._store_cards(job, text)
             except (json.JSONDecodeError, AttributeError) as e:
                 self._set(job["id"], status="failed", error=f"Antwort nicht lesbar: {e}")
             return

@@ -100,6 +100,7 @@
 <body>
 <header>
   <a href="{{ request.state.base }}/">Vorlesungen</a>
+  <a href="{{ request.state.base }}/lernen">Lernen</a>
   <a href="{{ request.state.base }}/kosten">Kosten</a>
   {% if not demo %}
   <span class="budget">{{ b.model }} · {{ "%.2f"|format(b.spent) }} von {{ "%.2f"|format(b.budget) }} USD

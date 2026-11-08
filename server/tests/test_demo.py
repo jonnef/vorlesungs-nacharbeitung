@@ -32,6 +32,8 @@ def test_preview_shows_sample_data(demo_client):
     assert "Austauschverfahren" in klausur and "Neu erstellen" not in klausur
     # „Basis“ kommt in beiden Vorlesungen vor und wird zusammengeführt
     assert len(main.service.module_glossary(1)) == 7
+    cm = demo_client.get("/modules/1/concept-map").text
+    assert "7 Begriffe" in cm and "Nullstellen liefern die → Eigenwert" in cm and "Neu erstellen" not in cm
     # Lernen: Beispielkarten zum Durchblättern, ohne Bewerten
     lernen = demo_client.get("/lernen").text
     assert "linear unabhängig" in lernen and "nr=1" in lernen and "/bewerten" not in lernen

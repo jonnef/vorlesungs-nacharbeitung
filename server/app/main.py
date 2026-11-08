@@ -18,7 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import cards, demo, exam, glossary, hints, ordering, search, slides
+from . import cards, conceptmap, demo, exam, glossary, hints, ordering, search, slides
 from .config import settings
 from .db import Database
 from .render import render_inline, render_notes
@@ -40,7 +40,8 @@ templates.env.globals["demo_login_url"] = settings.demo_login_url
 def _worker(stop: threading.Event) -> None:
     while not stop.wait(settings.poll_interval_sec):
         # Jeder Schritt einzeln, damit ein Fehler (z. B. beim Glossar) die übrigen nicht blockiert.
-        for step in (service.poll_jobs, service.ensure_glossary_jobs, service.ensure_hint_jobs,
+        for step in (service.poll_jobs, service.ensure_glossary_jobs, service.ensure_conceptmap_jobs,
+                     service.ensure_hint_jobs,
                      service.ensure_card_jobs, service.ensure_exam_jobs):
             try:
                 step()
@@ -320,7 +321,8 @@ def module_page(request: Request, module_id: int):
         "open_slides": service.lecture_slides_of(module_id=module_id),
         "hint_count": len(service.module_hints(module_id)),
         "hints_status": service.hints_status(module_id),
-        "cards_status": service.cards_status(module_id)})
+        "cards_status": service.cards_status(module_id),
+        "conceptmap": service.module_conceptmap(module_id)})
 
 
 @app.get("/modules/{module_id}/suche", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
@@ -436,6 +438,28 @@ def glossary_md(module_id: int):
     filename = quote(f"Glossar {module['name']}.md")
     return PlainTextResponse(_glossary_markdown(module), media_type="text/markdown; charset=utf-8",
                              headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
+
+
+@app.get("/modules/{module_id}/concept-map", response_class=HTMLResponse, dependencies=[Depends(web_auth)])
+def conceptmap_page(request: Request, module_id: int):
+    module = _get("SELECT * FROM modules WHERE id = ?", module_id)
+    data = service.module_conceptmap(module_id)
+    if data["map"]:
+        for n in data["map"]["nodes"]:
+            n["definition_html"] = render_inline(n["definition"])
+    return templates.TemplateResponse(request, "conceptmap.html", {
+        "module": module, "data": data, "kinds": conceptmap.KINDS,
+        "glossary_status": service.glossary_status(module_id), "b": _budget()})
+
+
+@app.post("/modules/{module_id}/concept-map", dependencies=[Depends(web_auth)])
+def conceptmap_regenerate(request: Request, module_id: int):
+    _get("SELECT id FROM modules WHERE id = ?", module_id)
+    try:
+        service.create_conceptmap_job(module_id)
+    except anthropic.APIError as e:
+        raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
+    return _redirect(request, f"/modules/{module_id}/concept-map")
 
 
 # ---------- Lernen ----------

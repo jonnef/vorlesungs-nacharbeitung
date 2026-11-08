@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS lecture_slide_pages (
 -- (wählt die Variante); suspended = archiviert (kommt nicht dran, wiederherstellbar);
 -- deleted_at = gelöscht: Zeile bleibt als Merker, damit die Karte bei einer neuen Fassung
 -- der Notizen nicht wieder entsteht, erscheint aber nirgends mehr.
+-- checked_at = von der automatischen Aussortier-Prüfung erfasst; archive_reason = deren Grund;
+-- kept = vom Nutzer wiederhergestellt bzw. von Hand behandelt, wird nie automatisch aussortiert.
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY,
     module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
@@ -144,6 +146,9 @@ CREATE TABLE IF NOT EXISTS cards (
     last_reviewed TEXT,
     suspended INTEGER NOT NULL DEFAULT 0,
     deleted_at TEXT,
+    checked_at TEXT,
+    archive_reason TEXT,
+    kept INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -192,8 +197,11 @@ class Database:
             conn.execute("ALTER TABLE jobs ADD COLUMN source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL")
         if "source_ids" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN source_ids TEXT")
-        if "deleted_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(cards)")}:
-            conn.execute("ALTER TABLE cards ADD COLUMN deleted_at TEXT")
+        card_cols = {r["name"] for r in conn.execute("PRAGMA table_info(cards)")}
+        for col, typ in (("deleted_at", "TEXT"), ("checked_at", "TEXT"), ("archive_reason", "TEXT"),
+                         ("kept", "INTEGER NOT NULL DEFAULT 0")):
+            if col not in card_cols:
+                conn.execute(f"ALTER TABLE cards ADD COLUMN {col} {typ}")
 
     @contextmanager
     def connect(self):

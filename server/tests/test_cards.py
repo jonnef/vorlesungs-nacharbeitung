@@ -145,10 +145,14 @@ def test_migration_adds_deleted_at(tmp_path):
 
     from app.db import SCHEMA, Database
     path = tmp_path / "alt.db"
-    old = SCHEMA.replace("    deleted_at TEXT,\n", "")
+    old = SCHEMA
+    for line in ("    deleted_at TEXT,\n", "    checked_at TEXT,\n", "    archive_reason TEXT,\n",
+                 "    kept INTEGER NOT NULL DEFAULT 0,\n"):
+        old = old.replace(line, "")
     assert old != SCHEMA
     with sqlite3.connect(path) as conn:
         conn.executescript(old)
     Database(path)
     with sqlite3.connect(path) as conn:
-        assert "deleted_at" in {r[1] for r in conn.execute("PRAGMA table_info(cards)")}
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(cards)")}
+    assert {"deleted_at", "checked_at", "archive_reason", "kept"} <= cols

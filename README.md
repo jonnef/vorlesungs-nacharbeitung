@@ -201,6 +201,12 @@ einem gemeinsamen Stapel:
 - Karten **archivieren** (kommen nicht mehr dran, wiederherstellbar) oder **löschen** (endgültig;
   entstehen auch bei einer neuen Fassung der Notizen nicht wieder) – direkt beim Lernen oder unter
   „Karten verwalten“, wo alle Karten nach Modul, aktiv/archiviert und per Suche aufgelistet sind.
+- **Automatisch aussortiert** wird, was sicher nicht in die Klausur gehört: Organisatorisches
+  (Termine, Abgaben, Anmeldung …), vom Dozenten ausdrücklich als „kommt nicht dran“ genannte
+  Themen und Karten ohne Lerninhalt. Jede Karte wird einmal geprüft, sobald im Modul keine Notizen,
+  Karten oder Prüfungshinweise mehr entstehen (ein paar Cent pro Modul). Aussortierte Karten landen
+  mit Grund im Archiv und lassen sich wiederherstellen; wiederhergestellte werden nie erneut
+  aussortiert. „Erneut prüfen“ unter „Karten verwalten“ prüft alle aktiven Karten noch einmal.
 - Wird eine Vorlesung neu erstellt, werden ihre noch nie gelernten Karten ersetzt; schon gelernte
   bleiben samt Lernstand erhalten.
 - **Kosten:** grob 0,05–0,20 $ pro Vorlesung (Batch). Auch für bereits vorhandene Vorlesungen
@@ -266,6 +272,8 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
 | `CONCEPTMAP_EFFORT` | `medium` | Denkaufwand für die Concept Map |
 | `CONCEPTMAP_MAX_TOKENS` | `16000` | Deckel für die Concept-Map-Antwort |
+| `CARDCHECK_EFFORT` | `medium` | Denkaufwand beim Aussortieren der Karten |
+| `CARDCHECK_MAX_TOKENS` | `8000` | Deckel für die Antwort beim Aussortieren |
 | `CARDS_EFFORT` | `medium` | Denkaufwand für Karteikarten und Übungsaufgaben |
 | `CARDS_MAX_TOKENS` | `20000` | Deckel für die Karteikarten-Antwort |
 | `CARDS_SCRIPT_TOKENS` | `15000` | Wie viele Tokens zitierter Skriptseiten mitgeschickt werden |

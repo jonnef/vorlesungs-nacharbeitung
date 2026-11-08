@@ -39,6 +39,9 @@ def test_preview_shows_sample_data(demo_client):
     assert "linear unabhängig" in lernen and "nr=1" in lernen and "/bewerten" not in lernen
     assert "Eigenwerte" in demo_client.get("/lernen?art=aufgabe&nr=2").text
     assert demo_client.post("/lernen/1/bewerten", data={"grade": "3"}).status_code == 403
+    karten = demo_client.get("/lernen/karten").text
+    assert "Alle Karten sind geprüft · 1 automatisch aussortiert" in karten and "Erneut prüfen" not in karten
+    assert "Termin zum Übungsbetrieb" in demo_client.get("/lernen/karten?archiv=1").text
 
 
 def test_preview_is_read_only(demo_client, fake_client):

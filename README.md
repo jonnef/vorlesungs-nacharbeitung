@@ -77,6 +77,12 @@ Das Skript fragt nach Pi-Adresse, Pi-Benutzer, Monatsbudget und API-Key und erle
 Aktualisieren: `cd ~/vorlesungs-nacharbeitung && git pull && ./install.sh`. Die vorigen Antworten
 werden vorgeschlagen, den API-Key fragt es nicht erneut ab.
 
+Nur den Pi aktualisieren, ohne Mac – z. B. von **Windows**: `update-pi-windows.bat` herunterladen
+und doppelklicken. Sie fragt nach Pi-Adresse und Branch, verbindet sich per SSH (in Windows 10/11
+eingebaut), holt den Stand von GitHub nach `~/vorlesungs-nacharbeitung-src` auf dem Pi und führt
+`scripts/update-pi.sh` aus. Daten und `.env` bleiben erhalten. Direkt auf dem Pi geht dasselbe mit
+`bash ~/vorlesungs-nacharbeitung-src/scripts/update-pi.sh` (nach `git pull` im Klon).
+
 Nützliches danach:
 
 | | |

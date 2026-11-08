@@ -189,6 +189,11 @@ Pro Modul zeigt Modul → „Concept Map“, wie die Begriffe zusammenhängen:
 Unter „Lernen“ (oben in der Leiste) liegen Karteikarten und Übungsaufgaben aller Module in
 einem gemeinsamen Stapel:
 
+- Die Karten fragen den **Stoff** ab, nicht die Vorlesung: Verständnis, Begründungen,
+  Vergleiche, Beispiele und Anwendung statt „Was stand auf Folie 12?“. Folien und Zeitstempel
+  stehen nur als Quelle auf der Rückseite. Ältere Karten lassen sich unter „Karten verwalten →
+  Karten neu erstellen …“ im neuen Stil neu erstellen (ungelernte werden ersetzt, gelernte
+  archiviert).
 - Sobald die Notizen einer Vorlesung fertig sind, erstellt Claude daraus Karteikarten
   (Frage → Antwort) und – bei Rechenstoff wie Mathe – Übungsaufgaben mit vollständigem
   Lösungsweg. Als Kontext dienen die Notizen und die darin zitierten Skriptseiten.

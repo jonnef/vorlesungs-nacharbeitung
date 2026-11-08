@@ -35,7 +35,7 @@ class FakeBatches:
         is_exam = "Klausurvorbereitung" in system
         is_hints = "AUSDRÜCKLICH über die Klausur" in system
         is_cardcheck = "räumst die Lernkarten" in system
-        is_cards = "Karteikarte" in system and not is_cardcheck
+        is_cards = "Wiederholung in wachsenden Abständen" in system
         is_conceptmap = "Concept Map" in system
         text = (self.parent.cardcheck_answer(request["params"]) if is_cardcheck
                 else self.parent.conceptmap_json if is_conceptmap else self.parent.cards_json if is_cards

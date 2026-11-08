@@ -156,3 +156,37 @@ def test_migration_adds_deleted_at(tmp_path):
     with sqlite3.connect(path) as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(cards)")}
     assert {"deleted_at", "checked_at", "archive_reason", "kept"} <= cols
+
+
+def test_regenerate_cards_replaces_old_style(client, fake_client, sample_pdf):
+    _setup(client, fake_client, sample_pdf)
+    svc = main.service
+    today = date.today()
+    learned = svc.next_card(today)
+    svc.review_card(learned["id"], 3, today)
+    old_job = learned["job_id"]
+
+    page = client.get("/lernen/karten?modul=1").text
+    assert "Karten neu erstellen" in page and "1 Vorlesung(en) im neuen Stil" in page
+    client.post("/lernen/karten/neu-erstellen", data={"modul": "1"})
+    assert "Karten für 1 Vorlesung(en) werden erstellt" in client.get("/lernen/karten").text
+    svc.poll_jobs()
+
+    # Gelernte alte Karte archiviert (wiederherstellbar), ungelernte ersetzt, keine Dublette der gelernten
+    old = svc.card(learned["id"])
+    assert old["suspended"] == 1 and old["archive_reason"] == svc.OLD_VERSION_REASON
+    active = svc.list_cards()
+    assert len(active) == 2 and all(c["job_id"] != old_job for c in active)
+    assert "automatisch aussortiert" not in client.get("/lernen/karten").text
+    # Ein normaler Durchlauf legt danach keinen weiteren Karten-Job an
+    with svc.db.connect() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM jobs WHERE kind = 'cards'").fetchone()[0]
+    svc.ensure_card_jobs()
+    with svc.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind = 'cards'").fetchone()[0] == n
+
+
+def test_prompt_asks_for_content_not_lecture_recall():
+    params = cards.build_request(model="m", effort="medium", max_tokens=10, title="VL", notes="# N", pages=[])
+    assert "nicht die Vorlesung" in params["system"]
+    assert "Erwähne Vorlesung, Folien, Skript, Notizen oder den Dozenten" in params["system"]

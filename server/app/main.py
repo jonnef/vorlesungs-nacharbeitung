@@ -547,7 +547,23 @@ def cards_page(request: Request, modul: str = "", archiv: str = ""):
         "active_count": len(service.list_cards(module_id, False)) if archived else len(items),
         "archived_count": service.archived_count(module_id),
         "all_modules": _all("SELECT id, name FROM modules ORDER BY name"), "today": date.today().isoformat(),
-        "check": service.cardcheck_status(module_id), "b": _budget()})
+        "check": service.cardcheck_status(module_id), "regen": service.card_regeneration_plan(module_id),
+        "cards_running": _all(
+            "SELECT COUNT(*) AS c FROM jobs j JOIN lectures l ON l.id = j.lecture_id WHERE j.kind = 'cards'"
+            " AND j.status IN ('estimated', 'blocked', 'submitted') AND (? IS NULL OR l.module_id = ?)",
+            module_id, module_id)[0]["c"],
+        "b": _budget()})
+
+
+@app.post("/lernen/karten/neu-erstellen", dependencies=[Depends(web_auth)])
+def cards_regenerate(request: Request, modul: str = Form(""), back: str = Form("/lernen/karten")):
+    """Karten im neuen Stil neu erstellen (Modul oder alle): ungelernte ersetzen, gelernte archivieren."""
+    module_id = _get("SELECT id FROM modules WHERE id = ?", int(modul))["id"] if modul.isdigit() else None
+    try:
+        service.regenerate_cards(module_id)
+    except anthropic.APIError as e:
+        raise HTTPException(502, f"Claude-API-Fehler bei der Token-Zählung: {api_error_text(e)}") from e
+    return _redirect(request, _safe_back(back, "/lernen/karten"))
 
 
 @app.post("/lernen/karten/pruefen", dependencies=[Depends(web_auth)])

@@ -554,14 +554,8 @@ class Service:
             ).fetchall()
             blocked = [r["id"] for r in conn.execute("SELECT id FROM jobs WHERE kind = 'cards' AND status = 'blocked'")]
         for n in pending:
-            pages = cards.cited_pages(n["notes_md"], self.module_pages(n["module_id"]),
-                                      self.settings.cards_script_tokens)
-            params = cards.build_request(
-                model=self.settings.model, effort=self.settings.cards_effort,
-                max_tokens=self.settings.cards_max_tokens, title=n["title"], notes=n["notes_md"], pages=pages,
-            )
             try:
-                self._insert_job(n["lecture_id"], "cards", params, json.loads(n["pages_json"]), source_job_id=n["id"])
+                self._create_card_job(dict(n))
             except anthropic.APIError as e:
                 log.warning("Karteikarten für Vorlesung %s nicht angelegt: %s", n["lecture_id"], api_error_text(e))
                 return
@@ -572,12 +566,57 @@ class Service:
                 except (BudgetError, ValueError, anthropic.APIError):
                     break
 
+    REPLACE = "ersetzen"  # Markierung in source_ids: alte Karten der Vorlesung werden ersetzt
+    OLD_VERSION_REASON = "Alte Fassung: durch neu erstellte Karten ersetzt"
+
+    def _create_card_job(self, n: dict, replace: bool = False) -> int:
+        """`n`: Notizen-Job mit lecture_id, notes_md, pages_json, title, module_id (und id)."""
+        pages = cards.cited_pages(n["notes_md"], self.module_pages(n["module_id"]), self.settings.cards_script_tokens)
+        params = cards.build_request(
+            model=self.settings.model, effort=self.settings.cards_effort,
+            max_tokens=self.settings.cards_max_tokens, title=n["title"], notes=n["notes_md"], pages=pages,
+        )
+        return self._insert_job(n["lecture_id"], "cards", params, json.loads(n["pages_json"]), source_job_id=n["id"],
+                                source_ids=[self.REPLACE] if replace else None)
+
+    def card_regeneration_plan(self, module_id: int | None = None) -> dict:
+        """Vorlesungen mit fertigen Notizen, deren Karten „Neu erstellen“ ersetzen würde, und grobe Kosten."""
+        where, args = ("AND l.module_id = ?", [module_id]) if module_id else ("", [])
+        with self.db.connect() as conn:
+            rows = [dict(r) for r in conn.execute(
+                "SELECT n.id, n.lecture_id, n.notes_md, n.pages_json, l.title, l.module_id FROM jobs n"
+                " JOIN lectures l ON l.id = n.lecture_id"
+                " WHERE n.kind = 'notes' AND n.status = 'done' AND n.notes_md IS NOT NULL"
+                " AND n.id = (SELECT MAX(id) FROM jobs WHERE lecture_id = n.lecture_id AND kind = 'notes'"
+                "             AND status = 'done' AND notes_md IS NOT NULL)"
+                f" AND NOT EXISTS (SELECT 1 FROM jobs c WHERE c.lecture_id = l.id AND c.kind = 'cards'"
+                f"                 AND c.status IN ('estimated', 'blocked', 'submitted')) {where}"
+                " ORDER BY l.module_id, l.source_filename", args)]
+            avg = conn.execute(
+                "SELECT AVG(s) AS a FROM (SELECT SUM(u.cost_usd) AS s FROM usage_log u JOIN jobs j ON j.id = u.job_id"
+                " WHERE j.kind = 'cards' GROUP BY j.id)").fetchone()["a"]
+        return {"lectures": rows, "expected_usd": (avg or 0.2) * len(rows)}
+
+    def regenerate_cards(self, module_id: int | None = None) -> int:
+        """Erstellt die Karten der Vorlesungen neu. Noch nie gelernte alte Karten werden ersetzt,
+        schon gelernte archiviert (wiederherstellbar). Rückgabe: Anzahl der Aufträge."""
+        created = 0
+        for n in self.card_regeneration_plan(module_id)["lectures"]:
+            self._create_card_job(n, replace=True)
+            created += 1
+        return created
+
     def _store_cards(self, job: dict, text: str) -> None:
-        """Ersetzt die noch nie gelernten Karten der Vorlesung; schon gelernte bleiben samt Lernstand."""
+        """Ersetzt die noch nie gelernten Karten der Vorlesung; schon gelernte bleiben samt Lernstand
+        (beim Neu-Erstellen werden sie archiviert)."""
         with self.db.connect() as conn:
             lec = conn.execute("SELECT module_id, duration_sec FROM lectures WHERE id = ?",
                                (job["lecture_id"],)).fetchone()
             items = cards.parse(text, lec["duration_sec"], {tuple(p) for p in json.loads(job["pages_json"])})
+            if self.REPLACE in json.loads(job.get("source_ids") or "[]"):
+                conn.execute("UPDATE cards SET suspended = 1, archive_reason = ? WHERE lecture_id = ?"
+                             " AND last_reviewed IS NOT NULL AND suspended = 0 AND deleted_at IS NULL",
+                             (self.OLD_VERSION_REASON, job["lecture_id"]))
             # Gelöschte und archivierte Karten bleiben stehen, damit sie nicht neu entstehen.
             conn.execute("DELETE FROM cards WHERE lecture_id = ? AND last_reviewed IS NULL AND deleted_at IS NULL"
                          " AND suspended = 0", (job["lecture_id"],))
@@ -782,7 +821,8 @@ class Service:
                 f" {where} ORDER BY j.id DESC LIMIT 1", args).fetchone()
             sorted_out = conn.execute(
                 "SELECT COUNT(*) AS c FROM cards WHERE archive_reason IS NOT NULL AND suspended = 1"
-                f" AND deleted_at IS NULL {cwhere}", args).fetchone()["c"]
+                f" AND archive_reason != ? AND deleted_at IS NULL {cwhere}",
+                [self.OLD_VERSION_REASON, *args]).fetchone()["c"]
             unchecked = conn.execute(
                 "SELECT COUNT(*) AS c FROM cards WHERE checked_at IS NULL AND suspended = 0"
                 f" AND deleted_at IS NULL {cwhere}", args).fetchone()["c"]

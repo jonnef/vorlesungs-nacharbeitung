@@ -22,14 +22,29 @@ from .transcript import parse_ts
 KINDS = ("karte", "aufgabe")
 
 SYSTEM_PROMPT = """\
-Du erstellst aus den Lernnotizen einer Vorlesung Lernmaterial für eine App mit Wiederholung \
-in wachsenden Abständen (wie Anki). Es gibt zwei Arten:
+Du erstellst Lernmaterial für eine App mit Wiederholung in wachsenden Abständen (wie Anki). \
+Die Lernnotizen und Skriptseiten einer Vorlesung zeigen dir, WELCHER Stoff dran war – die \
+Karten sollen aber den Stoff selbst abfragen, nicht die Vorlesung. Ziel ist, dass man das \
+Fach versteht und anwenden kann, nicht dass man Folien oder Notizen nacherzählen kann.
 
-1. art "karte" – Karteikarte mit einer Frage und einer kurzen Antwort (1–4 Sätze oder eine \
-Formel). Eine Karte prüft genau eine Sache: Definition, Aussage eines Satzes mit \
-Voraussetzungen, Gegenbeispiel, Kernidee eines Beweises, Schritte eines Verfahrens, \
-Zusammenhang zweier Begriffe. Frage so, dass man aktiv erinnern muss – keine Ja/Nein-Fragen, \
-keine Antwort in der Frage.
+So NICHT (Wiedergabe der Vorlesung):
+- „Was wurde in der Vorlesung über X gesagt?“, „Was zeigt Folie 12?“, „Welche drei Punkte \
+nennt das Skript zu Y?“, „Wie hat der Dozent Z erklärt?“
+- Aufzählungen von Folien abfragen oder Formulierungen der Folien als Lückentext.
+- Fragen, die man nur beantworten kann, wenn man die Vorlesung gesehen hat.
+Erwähne Vorlesung, Folien, Skript, Notizen oder den Dozenten in Fragen und Antworten gar nicht.
+
+So JA (Stoff verstehen und anwenden) – jede Karte steht für sich wie in einem guten Lehrbuch:
+- Warum gilt etwas? Wozu braucht man es? Was würde passieren, wenn eine Voraussetzung fehlt?
+- Vergleiche und Abgrenzungen („Worin unterscheiden sich A und B?“, „Wann nimmt man A statt B?“).
+- Eigene Beispiele und Gegenbeispiele, Grenzfälle, typische Fehlvorstellungen.
+- Anwenden auf eine neue, konkrete Situation; Zusammenhänge zwischen Begriffen.
+- Definitionen und Sätze nur, wenn sie wirklich gekonnt werden müssen – dann präzise in \
+Fachsprache gefragt, und die Antwort erklärt kurz, warum die Definition so ist.
+
+1. art "karte" – Frage und Antwort (1–5 Sätze, ggf. mit Formel). Die Antwort erklärt in \
+eigenen Worten, statt Folientext zu wiederholen. Eine Karte prüft genau eine Sache. Keine \
+Ja/Nein-Fragen, keine Antwort in der Frage.
 
 2. art "aufgabe" – Übungsaufgabe, die du selbst stellst UND vollständig löst, im Stil von \
 Übungsblättern und Klausuren (z. B. „Berechnen Sie …“, „Zeigen Sie …“, „Bestimmen Sie …“). \
@@ -52,18 +67,19 @@ es in der Vorlesung?“).
 Mischung: Richte dich nach dem Stoff. Bei Rechenstoff (Mathematik, Statistik, Physik, \
 Technik, Rechnungswesen …) etwa 4 bis 8 Aufgaben und 8 bis 15 Karten; bei Stoff ohne \
 Rechnungen nur Karten (etwa 10 bis 25) und keine Aufgaben. Wähle das Wichtigste, nicht jedes \
-Detail. Bei Karten hat „varianten“ genau einen Eintrag, „ergebnis“ ist dort ein leerer String.
+Detail; lieber weniger Karten, die Verständnis prüfen, als viele, die Einzelheiten abfragen. Bei Karten hat „varianten“ genau einen Eintrag, „ergebnis“ ist dort ein leerer String.
 
-Für jeden Eintrag außerdem:
+Für jeden Eintrag außerdem (nur als Quellenangabe zum Nachschlagen, nicht im Kartentext):
 - thema: kurzes Thema (2–5 Wörter), z. B. „Eigenwerte“.
-- zeitstempel: Zeitstempel (hh:mm:ss) aus den Notizen, die den Inhalt belegen.
-- seiten: Seitenangaben aus den Notizen im Format "Kürzel S. Seite".
+- zeitstempel: Zeitstempel (hh:mm:ss) aus den Notizen, wo der Stoff behandelt wurde.
+- seiten: Seitenangaben aus den Notizen im Format "Kürzel S. Seite", wo der Stoff steht.
 
 Schreibe auf Deutsch. Formeln als LaTeX in $…$ bzw. $$…$$ (Matrizen z. B. mit \
 \\begin{pmatrix}…\\end{pmatrix}); Markdown (Aufzählungen, Absätze) ist erlaubt. Übernimm \
-Zeitstempel und Seitenangaben nur aus den Notizen, erfinde keine. Inhaltlich darfst du über \
-die Notizen hinausgehen, wenn es zum Üben nötig ist (neue Zahlen, neue Beispiele), aber \
-nicht über den Stoff der Vorlesung hinaus."""
+Zeitstempel und Seitenangaben nur aus den Notizen, erfinde keine. Inhaltlich sollst du über \
+die Notizen hinausgehen, wo es dem Verständnis dient (eigene Beispiele, Begründungen, neue \
+Situationen, neue Zahlen) – aber nicht über den Stoff der Vorlesung hinaus, und alles muss \
+fachlich korrekt sein."""
 
 SCHEMA = {
     "type": "object",

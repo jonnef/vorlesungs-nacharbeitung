@@ -47,16 +47,24 @@
 </form>
 
 <div class="check-status muted">
+  {% if cards_running %}<span class="status s-submitted">läuft</span> Karten für {{ cards_running }} Vorlesung(en) werden erstellt.{% endif %}
   {% if check.running %}<span class="status s-submitted">läuft</span> Karten werden gerade geprüft – Organisatorisches und vom Dozenten ausgeschlossene Themen werden archiviert.
   {% elif check.unchecked %}{{ check.unchecked }} Karte(n) werden demnächst automatisch geprüft.
-  {% else %}Alle Karten sind geprüft{% if check.sorted_out %} · {{ check.sorted_out }} automatisch aussortiert
-    {%- if not archived %} (<a href="{{ request.state.base }}/lernen/karten?{{ mq }}archiv=1">ansehen</a>){% endif %}{% endif %}.{% endif %}
+  {% else %}<span>Alle Karten sind geprüft{% if check.sorted_out %} · {{ check.sorted_out }} automatisch aussortiert
+    {%- if not archived %} (<a href="{{ request.state.base }}/lernen/karten?{{ mq }}archiv=1">ansehen</a>){% endif %}{% endif %}.</span>{% endif %}
   {% if check.error %}<span class="err">Letzte Prüfung fehlgeschlagen: {{ check.error }}</span>{% endif %}
   {% if not demo and not check.running %}
   <form method="post" action="{{ request.state.base }}/lernen/karten/pruefen" class="inline"
         onsubmit="return confirm('Alle aktiven Karten{% if module_id %} dieses Moduls{% endif %} erneut prüfen lassen? Das kostet ein paar Cent.')">
     <input type="hidden" name="modul" value="{{ module_id or '' }}"><input type="hidden" name="back" value="{{ back }}">
     <button class="link">Erneut prüfen</button>
+  </form>
+  {% endif %}
+  {% if not demo and regen.lectures %}
+  <form method="post" action="{{ request.state.base }}/lernen/karten/neu-erstellen" class="inline"
+        onsubmit='return confirm({{ ("Karten für " ~ regen.lectures|length ~ " Vorlesung(en) im neuen Stil neu erstellen? Kosten ca. " ~ "%.2f"|format(regen.expected_usd) ~ " USD.\n\nNoch nie gelernte Karten werden ersetzt, schon gelernte archiviert (wiederherstellbar).")|tojson }})'>
+    <input type="hidden" name="modul" value="{{ module_id or '' }}"><input type="hidden" name="back" value="{{ back }}">
+    <button class="link">Karten neu erstellen …</button>
   </form>
   {% endif %}
 </div>

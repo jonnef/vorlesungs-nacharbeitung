@@ -355,14 +355,17 @@ def _independence_task(v, w, det, independent, note) -> dict:
 # (Vorlesung, Art, Thema, Taschenrechner, Varianten, Zeitstempel, Seiten)
 CARDS = [
     (0, "karte", "Lineare Unabhängigkeit", False, [{
-        "front": r"Wann heißen Vektoren $v_1, \dots, v_n$ **linear unabhängig**?",
-        "back": r"Wenn aus $a_1 v_1 + \dots + a_n v_n = 0$ folgt, dass alle $a_i = 0$ sind – nur die triviale "
-                "Linearkombination ergibt den Nullvektor.", "result": ""}],
+        "front": "Warum ist eine Menge von Vektoren, die den Nullvektor enthält, nie **linear unabhängig**?",
+        "back": r"Weil $1 \cdot 0 = 0$ schon eine nichttriviale Linearkombination ist, die den Nullvektor ergibt: "
+                "Der Koeffizient vor dem Nullvektor darf ungleich null sein. Linear unabhängig heißt aber, dass nur "
+                "die triviale Kombination (alle Koeffizienten null) den Nullvektor ergibt.", "result": ""}],
      ["00:21:00", "00:22:00"], ["LA_Skript S. 2"]),
     (0, "karte", "Basis und Dimension", False, [{
-        "front": "Was ist eine **Basis** eines Vektorraums, und was ist seine **Dimension**?",
-        "back": "Eine Basis ist ein linear unabhängiges Erzeugendensystem. Alle Basen haben gleich viele Elemente; "
-                "diese Anzahl ist die Dimension.", "result": ""}],
+        "front": r"Können vier Vektoren im $\mathbb{R}^3$ linear unabhängig sein? Und können zwei Vektoren den "
+                 r"$\mathbb{R}^3$ erzeugen?",
+        "back": "Beides nein. Eine linear unabhängige Menge hat höchstens so viele Elemente wie die Dimension (hier 3), "
+                "ein Erzeugendensystem mindestens so viele. Vier Vektoren sind also immer abhängig, und zwei Vektoren "
+                "spannen höchstens eine Ebene auf.", "result": ""}],
      ["00:40:15", "00:48:00"], ["LA_Skript S. 2"]),
     (0, "aufgabe", "Lineare Unabhängigkeit prüfen", False, [
         _independence_task((1, 2), (3, 6), 0, False, "Die Determinante ist $0$, also sind die Vektoren linear "
@@ -373,9 +376,11 @@ CARDS = [
                            "abhängig – der zweite ist das $(-2)$-Fache des ersten."),
     ], ["00:22:00"], ["LA_Skript S. 2"]),
     (1, "karte", "Eigenwerte bestimmen", False, [{
-        "front": "Wie bestimmt man die **Eigenwerte** einer quadratischen Matrix $A$?",
-        "back": r"Als Nullstellen des charakteristischen Polynoms: $\det(A - \lambda E) = 0$ setzen und nach "
-                r"$\lambda$ auflösen.", "result": ""}],
+        "front": r"Warum bestimmt man Eigenwerte über $\det(A - \lambda E) = 0$, statt $Av = \lambda v$ direkt zu "
+                 "lösen?",
+        "back": r"$Av = \lambda v$ heißt $(A - \lambda E)v = 0$ mit $v \neq 0$. Eine solche Lösung gibt es genau dann, "
+                r"wenn $A - \lambda E$ nicht invertierbar ist, also $\det(A - \lambda E) = 0$. Das ist eine Gleichung "
+                r"nur in $\lambda$ – man muss $v$ dafür noch nicht kennen.", "result": ""}],
      ["00:25:00", "00:26:00"], ["LA_Skript S. 3"]),
     (1, "aufgabe", "Eigenwerte einer 2×2-Matrix", False, [
         _eigen_task(2, 1, 1, 2, r"\lambda^2 - 4\lambda + 3", r"(\lambda - 1)(\lambda - 3)", 1, 3),
@@ -393,9 +398,11 @@ CARDS = [
          "result": r"$\lambda_1 \approx 3{,}73,\ \lambda_2 \approx 0{,}27$"},
     ], ["00:26:00"], ["LA_Skript S. 3"]),
     (1, "karte", "Diagonalisierbarkeit", False, [{
-        "front": r"Wann ist eine Matrix $A$ **diagonalisierbar**, und worauf muss man bei $A = S D S^{-1}$ achten?",
-        "back": "Genau dann, wenn es eine Basis aus Eigenvektoren gibt. Die Eigenvektoren in $S$ müssen in derselben "
-                "Reihenfolge stehen wie die zugehörigen Eigenwerte in $D$ – ein typischer Fehler.", "result": ""}],
+        "front": r"Eine $3 \times 3$-Matrix hat drei verschiedene Eigenwerte. Ist sie **diagonalisierbar**? "
+                 "Begründe.",
+        "back": "Ja. Eigenvektoren zu verschiedenen Eigenwerten sind linear unabhängig – drei davon bilden also eine "
+                r"Basis des $\mathbb{R}^3$ aus Eigenvektoren, und genau das heißt diagonalisierbar. Bei $A = S D S^{-1}$ "
+                "stehen sie in derselben Reihenfolge in $S$ wie die Eigenwerte in $D$.", "result": ""}],
      ["00:50:00", "01:05:00"], ["LA_Skript S. 4"]),
 ]
 
@@ -510,6 +517,11 @@ def refresh_sample_texts(db: Database) -> None:
                 (lec["notes"], lec["title"]),
             )
         conn.execute("UPDATE jobs SET notes_md = ? WHERE kind = 'exam' AND model = 'Beispiel'", (EXAM,))
+        for _index, kind, topic, _calc, variants, _ts, _pages in CARDS:
+            conn.execute(
+                "UPDATE cards SET variants_json = ?, norm = ? WHERE kind = ? AND topic = ?"
+                " AND job_id IN (SELECT id FROM jobs WHERE kind = 'cards' AND model = 'Beispiel')",
+                (json.dumps(variants), glossary.normalize(variants[0]["front"]), kind, topic))
 
 
 def _seed_module(db: Database) -> None:

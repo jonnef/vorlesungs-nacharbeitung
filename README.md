@@ -83,6 +83,35 @@ eingebaut), holt den Stand von GitHub nach `~/vorlesungs-nacharbeitung-src` auf 
 `scripts/update-pi.sh` aus. Daten und `.env` bleiben erhalten. Direkt auf dem Pi geht dasselbe mit
 `bash ~/vorlesungs-nacharbeitung-src/scripts/update-pi.sh` (nach `git pull` im Klon).
 
+### Automatisches Deployment (nach jedem Merge auf main)
+
+Wie bei der Budget Book App: Auf dem Pi läuft ein GitHub-Actions-Runner. Workflow
+`.github/workflows/ci-deploy.yml`:
+
+1. Bei jedem Pull Request laufen die Tests auf GitHub (grünes Häkchen bzw. rotes Kreuz im PR).
+2. Nach einem Merge auf `main` laufen sie noch einmal; sind sie grün, führt der Runner auf dem Pi
+   `scripts/update-pi.sh` aus. Das Skript sichert vorher die Datenbank
+   (`server/data/backups/`, die neuesten 10) und spielt den vorigen Stand zurück, wenn die App
+   nach dem Update nicht antwortet – der Lauf wird dann rot.
+3. Von Hand neu deployen: GitHub → Actions → „Tests & Deployment“ → „Run workflow“.
+
+**Einmalig einrichten** (eigener Runner, unabhängig vom Budget-Book-Runner der Organisation):
+
+1. GitHub → dieses Repository → Settings → Actions → Runners → „New self-hosted runner“ →
+   Linux / ARM64. Den Token aus der Zeile `./config.sh … --token XXXX` kopieren (gilt eine Stunde).
+2. `update-pi-windows.bat` starten (Branch: Enter für `main`) und am Ende „Jetzt einrichten?“ mit
+   `j` beantworten, Token einfügen. Alternativ auf dem Pi:
+   `bash ~/vorlesungs-nacharbeitung-src/scripts/install-runner.sh`
+3. Unter Settings → Actions → Runners steht der Runner danach als „Idle“.
+
+Das Repository ist privat – ein Runner auf dem eigenen Gerät darf nicht an einem öffentlichen
+Repository hängen, sonst könnten Pull Requests aus Forks Code auf dem Pi ausführen. Die `.bat`
+fragt bei einem privaten Repository nach GitHub-Zugangsdaten (Benutzername + Personal Access
+Token); sie wird nach der Einrichtung aber nur noch als Notlösung gebraucht.
+
+Log eines Deployments: GitHub → Actions → jeweiliger Lauf; auf dem Pi
+`journalctl -u 'actions.runner.*vorlesungen*' -n 50`.
+
 Nützliches danach:
 
 | | |

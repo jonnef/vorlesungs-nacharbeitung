@@ -57,3 +57,43 @@ def test_conceptmap_flow(client, fake_client):
     # Von Hand neu erstellen
     client.post("/modules/1/concept-map")
     assert len(_maps()) == 3
+
+
+def test_retry_after_token_limit_once_limit_is_higher(client, fake_client):
+    _post_lecture(client, "VL01.mp4")
+    fake_client.finished = True
+    main.service.poll_jobs()
+    main.service.ensure_glossary_jobs()
+    main.service.poll_jobs()
+    old_limit = main.settings.conceptmap_max_tokens
+    main.settings.conceptmap_max_tokens = 16000
+    try:
+        fake_client.stop_reason = "max_tokens"
+        main.service.ensure_conceptmap_jobs()
+        main.service.poll_jobs()
+        [failed] = _maps()
+        assert failed["status"] == "failed" and "Token-Deckel" in failed["error"]
+        page = client.get("/modules/1/concept-map").text
+        assert "Erneut versuchen" in page
+
+        # Gleicher Deckel → kein automatischer neuer Versuch (keine laufenden Kosten)
+        main.service.ensure_conceptmap_jobs()
+        assert len(_maps()) == 1
+
+        # Höherer Deckel → genau ein neuer Versuch, der klappt
+        fake_client.stop_reason = "end_turn"
+        main.settings.conceptmap_max_tokens = 32000
+        main.service.ensure_conceptmap_jobs()
+        main.service.poll_jobs()
+        assert len(_maps()) == 2 and _maps()[-1]["status"] == "done"
+        assert json.loads(_maps()[-1]["request_json"])["max_tokens"] == 32000
+        main.service.ensure_conceptmap_jobs()
+        assert len(_maps()) == 2
+    finally:
+        main.settings.conceptmap_max_tokens = old_limit
+        fake_client.stop_reason = "end_turn"
+
+
+def test_prompt_caps_terms():
+    params = conceptmap.build_request(model="m", effort="medium", max_tokens=10, module="LA", groups=[], max_terms=42)
+    assert "höchstens 42" in params["system"] and "{max_terms}" not in params["system"]

@@ -26,7 +26,9 @@ Glossar des Moduls (Begriffe, Formeln und Sätze mit Definition und der Vorlesun
 vorkommen).
 
 knoten: Übernimm die Glossarbegriffe – genau in der Schreibweise des Glossars, keine neuen \
-Begriffe. Lass nur Einträge weg, die mit nichts zusammenhängen. Ordne jedem Begriff eine \
+Begriffe. Lass Einträge weg, die mit nichts zusammenhängen. Nimm höchstens {max_terms} \
+Begriffe auf; hat das Glossar mehr, wähle die zentralen (Grundbegriffe, wichtige Sätze und \
+Verfahren) und lass Randbegriffe und Einzelbeispiele weg. Ordne jedem Begriff eine \
 gruppe zu: ein Oberthema aus 1–4 Wörtern (z. B. „Eigenwerte“, „Vektorräume“); insgesamt \
 etwa 3 bis 8 Gruppen.
 
@@ -37,11 +39,12 @@ kanten: die wichtigen inhaltlichen Beziehungen zwischen zwei Begriffen, gerichte
 - "teil": „von“ ist Bestandteil von „nach“,
 - "verwendet": „von“ ist ein Werkzeug/Verfahren, mit dem man „nach“ bestimmt oder zeigt,
 - "verwandt": sonstiger enger Zusammenhang (z. B. Gegensatz, Äquivalenz).
-beschriftung: kurze, konkrete Beschreibung der Beziehung (2–6 Wörter, z. B. „Nullstellen \
+beschriftung: kurze, konkrete Beschreibung der Beziehung (2–5 Wörter, z. B. „Nullstellen \
 liefern die“, „gleich Anzahl der Basisvektoren“), auf Deutsch.
 
-Verbinde jeden Begriff mit mindestens einem anderen, auch über Vorlesungen hinweg. Keine \
-doppelten oder trivialen Kanten; lieber die tragenden Zusammenhänge als jede denkbare. Stütze \
+Verbinde jeden Begriff mit mindestens einem anderen, auch über Vorlesungen hinweg – im \
+Schnitt höchstens zwei Kanten pro Begriff. Keine doppelten oder trivialen Kanten; lieber die \
+tragenden Zusammenhänge als jede denkbare. Stütze \
 dich auf die Definitionen im Glossar und auf gesichertes Fachwissen, das zum Stoff gehört."""
 
 SCHEMA = {
@@ -76,7 +79,8 @@ SCHEMA = {
 }
 
 
-def build_request(*, model: str, effort: str, max_tokens: int, module: str, groups: list[dict]) -> dict:
+def build_request(*, model: str, effort: str, max_tokens: int, module: str, groups: list[dict],
+                  max_terms: int = 80) -> dict:
     """`groups`: zusammengeführte Glossareinträge (glossary.group_entries)."""
     lines = []
     for g in groups:
@@ -90,7 +94,7 @@ def build_request(*, model: str, effort: str, max_tokens: int, module: str, grou
         "max_tokens": max_tokens,
         "thinking": {"type": "adaptive"},
         "output_config": {"effort": effort, "format": {"type": "json_schema", "schema": SCHEMA}},
-        "system": SYSTEM_PROMPT,
+        "system": SYSTEM_PROMPT.replace("{max_terms}", str(max_terms)),
         "messages": [{"role": "user", "content": content}],
     }
 

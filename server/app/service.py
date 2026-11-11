@@ -908,7 +908,8 @@ class Service:
         with self.db.connect() as conn:
             module = conn.execute("SELECT name FROM modules WHERE id = ?", (module_id,)).fetchone()["name"]
         params = conceptmap.build_request(model=self.settings.model, effort=self.settings.conceptmap_effort,
-                                          max_tokens=self.settings.conceptmap_max_tokens, module=module, groups=groups)
+                                          max_tokens=self.settings.conceptmap_max_tokens, module=module, groups=groups,
+                                          max_terms=self.settings.conceptmap_max_terms)
         return self._insert_job(sources[-1][0], "conceptmap", params, [], source_ids=sources)
 
     def ensure_conceptmap_jobs(self) -> None:
@@ -929,7 +930,8 @@ class Service:
             if not sources:
                 continue
             latest = self.latest_conceptmap_job(module_id)
-            if latest and json.loads(latest["source_ids"] or "[]") == sources:
+            if latest and json.loads(latest["source_ids"] or "[]") == sources \
+                    and not self._conceptmap_retry_allowed(latest):
                 if latest["status"] == "blocked" and self.settings.auto_submit:
                     try:
                         self.submit_job(latest["id"])
@@ -941,6 +943,13 @@ class Service:
             except anthropic.APIError as e:
                 log.warning("Concept Map für Modul %s nicht angelegt: %s", module_id, api_error_text(e))
                 return
+
+    def _conceptmap_retry_allowed(self, job: dict) -> bool:
+        """Ein am Token-Deckel gescheiterter Versuch wird einmal wiederholt, sobald der Deckel höher ist.
+        Andere Fehler werden nicht automatisch wiederholt (sonst entstünden laufend Kosten)."""
+        if job["status"] != "failed" or "Token-Deckel" not in (job["error"] or ""):
+            return False
+        return json.loads(job["request_json"]).get("max_tokens", 0) < self.settings.conceptmap_max_tokens
 
     def _store_conceptmap(self, job: dict, text: str) -> None:
         with self.db.connect() as conn:

@@ -99,9 +99,16 @@ Wie bei der Budget Book App: Auf dem Pi läuft ein GitHub-Actions-Runner. Workfl
 
 1. GitHub → dieses Repository → Settings → Actions → Runners → „New self-hosted runner“ →
    Linux / ARM64. Den Token aus der Zeile `./config.sh … --token XXXX` kopieren (gilt eine Stunde).
-2. `update-pi-windows.bat` starten (Branch: Enter für `main`) und am Ende „Jetzt einrichten?“ mit
-   `j` beantworten, Token einfügen. Alternativ auf dem Pi:
-   `bash ~/vorlesungs-nacharbeitung-src/scripts/install-runner.sh`
+2. Einen dieser Wege nehmen und bei „Jetzt einrichten?“ mit `j` antworten, Token einfügen:
+   - **Mac:** im Repo `git pull`, dann `update-pi-mac.command` im Finder doppelklicken
+     (oder `./install.sh` – fragt ebenfalls, solange noch kein Runner eingerichtet ist).
+   - **Windows:** `update-pi-windows.bat` (Branch: Enter für `main`).
+   - **Handy** (SSH-App wie Termius, Verbindung über Tailscale oder WLAN): als der Benutzer
+     anmelden, unter dem die App läuft, und diese Zeile einfügen:
+
+     ```bash
+     cd ~ && { [ -d vorlesungs-nacharbeitung-src/.git ] || git clone https://github.com/jonnef/vorlesungs-nacharbeitung.git vorlesungs-nacharbeitung-src; } && cd vorlesungs-nacharbeitung-src && git fetch -q origin && git checkout -q -B main origin/main && bash scripts/update-pi.sh && bash scripts/install-runner.sh
+     ```
 3. Unter Settings → Actions → Runners steht der Runner danach als „Idle“.
 
 Das Repository ist privat – ein Runner auf dem eigenen Gerät darf nicht an einem öffentlichen

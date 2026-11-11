@@ -36,6 +36,7 @@ def test_preview_shows_sample_data(demo_client):
     assert "7 Begriffe" in cm and "Nullstellen liefern die → Eigenwert" in cm and "Neu erstellen" not in cm
     # Lernen: Beispielkarten zum Durchblättern, ohne Bewerten
     lernen = demo_client.get("/lernen").text
+    assert 'id="check-answer"' not in lernen  # Antwortprüfung kostet – nicht in der Vorschau
     assert "linear unabhängig" in lernen and "nr=1" in lernen and "/bewerten" not in lernen
     assert "Eigenwerte" in demo_client.get("/lernen?art=aufgabe&nr=2").text
     assert demo_client.post("/lernen/1/bewerten", data={"grade": "3"}).status_code == 403

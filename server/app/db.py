@@ -170,7 +170,8 @@ CREATE TABLE IF NOT EXISTS usage_log (
     cache_creation_tokens INTEGER NOT NULL,
     cache_read_tokens INTEGER NOT NULL,
     cost_usd REAL NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    note TEXT  -- Sofort-Aufrufe ohne Job (z. B. „Antwort geprüft“)
 );
 """
 
@@ -197,6 +198,8 @@ class Database:
             conn.execute("ALTER TABLE jobs ADD COLUMN source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL")
         if "source_ids" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN source_ids TEXT")
+        if "note" not in {r["name"] for r in conn.execute("PRAGMA table_info(usage_log)")}:
+            conn.execute("ALTER TABLE usage_log ADD COLUMN note TEXT")
         card_cols = {r["name"] for r in conn.execute("PRAGMA table_info(cards)")}
         for col, typ in (("deleted_at", "TEXT"), ("checked_at", "TEXT"), ("archive_reason", "TEXT"),
                          ("kept", "INTEGER NOT NULL DEFAULT 0")):

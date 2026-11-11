@@ -10,6 +10,9 @@ PRICES = {
     "claude-opus-5-5": (4.00, 20.00),
     "claude-opus-4-8": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
+    "claude-sonnet-5-5": (2.00, 10.00),
+    # Haiku 5.5: Preis für Prompts bis 100K Tokens (darüber 0,50 / 2,50 – kommt hier nicht vor).
+    "claude-haiku-5-5": (0.10, 0.50),
 }
 CACHE_WRITE_FACTOR = 1.25
 CACHE_READ_FACTOR = 0.10
@@ -40,6 +43,6 @@ def cost_usd(
     return total * (BATCH_FACTOR if batch else 1.0)
 
 
-def worst_case_usd(model: str, input_tokens: int, max_output_tokens: int) -> float:
+def worst_case_usd(model: str, input_tokens: int, max_output_tokens: int, batch: bool = True) -> float:
     """Obergrenze: alle Input-Tokens + voll ausgeschöpftes max_tokens (inkl. Denkprozess)."""
-    return cost_usd(model, input_tokens, max_output_tokens)
+    return cost_usd(model, input_tokens, max_output_tokens, batch=batch)

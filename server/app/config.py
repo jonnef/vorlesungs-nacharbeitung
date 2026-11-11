@@ -66,6 +66,12 @@ class Settings:
     # Automatisches Aussortieren (Organisatorisches, laut Dozent nicht klausurrelevant).
     cardcheck_effort: str = field(default_factory=lambda: _env("CARDCHECK_EFFORT", "medium"))
     cardcheck_max_tokens: int = field(default_factory=lambda: int(_env("CARDCHECK_MAX_TOKENS", "8000")))
+    # Antworten beim Lernen prüfen (sofort, ohne Batch-Rabatt): Karteikarten-Antworten und Fotos
+    # vom Rechenweg. Foto-Modell leer = dasselbe wie ANSWER_CHECK_MODEL.
+    answer_check_model: str = field(default_factory=lambda: _env("ANSWER_CHECK_MODEL", "claude-haiku-5-5"))
+    answer_photo_model: str = field(default_factory=lambda: _env("ANSWER_PHOTO_MODEL", ""))
+    answer_check_effort: str = field(default_factory=lambda: _env("ANSWER_CHECK_EFFORT", "low"))
+    answer_check_max_tokens: int = field(default_factory=lambda: int(_env("ANSWER_CHECK_MAX_TOKENS", "4000")))
     # Wie viele neue Karten pro Tag beim Lernen dazukommen (über alle Module).
     new_cards_per_day: int = field(default_factory=lambda: int(_env("NEW_CARDS_PER_DAY", "20")))
 

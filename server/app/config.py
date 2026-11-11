@@ -54,7 +54,10 @@ class Settings:
 
     # Concept Map pro Modul (aus den Glossareinträgen).
     conceptmap_effort: str = field(default_factory=lambda: _env("CONCEPTMAP_EFFORT", "medium"))
-    conceptmap_max_tokens: int = field(default_factory=lambda: int(_env("CONCEPTMAP_MAX_TOKENS", "16000")))
+    # Deckel inkl. Denkprozess; große Module brauchen Platz für viele Begriffe und Kanten.
+    conceptmap_max_tokens: int = field(default_factory=lambda: int(_env("CONCEPTMAP_MAX_TOKENS", "32000")))
+    # Höchstens so viele Begriffe auf der Map – bei größeren Glossaren die zentralen.
+    conceptmap_max_terms: int = field(default_factory=lambda: int(_env("CONCEPTMAP_MAX_TERMS", "80")))
 
     # Karteikarten und Übungsaufgaben pro Vorlesung (aus Notizen + zitierten Skriptseiten).
     cards_effort: str = field(default_factory=lambda: _env("CARDS_EFFORT", "medium"))

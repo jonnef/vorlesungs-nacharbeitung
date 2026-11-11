@@ -276,7 +276,8 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `GLOSSARY_EFFORT` | `medium` | Denkaufwand für die Glossar-Auswertung |
 | `GLOSSARY_MAX_TOKENS` | `10000` | Deckel für die Glossar-Antwort |
 | `CONCEPTMAP_EFFORT` | `medium` | Denkaufwand für die Concept Map |
-| `CONCEPTMAP_MAX_TOKENS` | `16000` | Deckel für die Concept-Map-Antwort |
+| `CONCEPTMAP_MAX_TOKENS` | `32000` | Deckel für die Concept-Map-Antwort (inkl. Denkprozess) |
+| `CONCEPTMAP_MAX_TERMS` | `80` | Höchstens so viele Begriffe auf der Map – bei größeren Glossaren die zentralen |
 | `CARDCHECK_EFFORT` | `medium` | Denkaufwand beim Aussortieren der Karten |
 | `CARDCHECK_MAX_TOKENS` | `8000` | Deckel für die Antwort beim Aussortieren |
 | `CARDS_EFFORT` | `medium` | Denkaufwand für Karteikarten und Übungsaufgaben |

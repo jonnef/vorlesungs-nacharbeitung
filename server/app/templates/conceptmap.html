@@ -44,6 +44,10 @@
     {% endif %}
   {% elif latest and latest.status == "failed" %}
     <span class="status s-failed">Fehler</span> <span class="err">{{ latest.error }}</span>
+    {% if not demo %}
+      <form class="inline" method="post" action="{{ request.state.base }}/modules/{{ module.id }}/concept-map">
+        <button class="secondary" style="font-size:14px;padding:2px 10px">Erneut versuchen</button></form>
+    {% endif %}
   {% endif %}
   {% if not data.map and not running %}
     <p class="muted" style="margin:{{ '8px' if latest else '0' }} 0 0">Die Concept Map entsteht automatisch aus dem Glossar, sobald die erste Vorlesung ausgewertet ist

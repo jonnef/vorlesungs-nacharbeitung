@@ -65,13 +65,59 @@ def prompt_for(question: str, topic: str = "") -> str:
     return re.sub(r"\s+", " ", text).strip(" .")[:PROMPT_CHARS]
 
 
+SAMPLE_RATE = 16000
+
+
+def decode(path: str):
+    """Audiodatei → 16 kHz Mono (float32-Array), mit PyAV.
+
+    Bewusst selbst statt mit faster_whisper.decode_audio: Das übergibt PyAV einen Parameter
+    (metadata_errors), den manche PyAV-Versionen nicht kennen – je nachdem, was pip auf dem Pi
+    installiert, schlug das Einlesen sonst fehl.
+    """
+    import av
+    import numpy as np
+
+    resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
+    chunks = []
+
+    def add(result):
+        # ältere PyAV-Versionen liefern einen Frame (oder None), neuere eine Liste
+        for out in (result if isinstance(result, list) else [result]):
+            if out is not None:
+                chunks.append(out.to_ndarray())
+
+    container = av.open(path)
+    try:
+        if not container.streams.audio:
+            raise ValueError("Die Aufnahme enthält keine Tonspur.")
+        stream = container.streams.audio[0]
+        for frame in container.decode(stream):
+            frame.pts = None  # Zeitstempel der Browser-Aufnahmen sind nicht immer lückenlos
+            add(resampler.resample(frame))
+        try:
+            add(resampler.resample(None))  # Rest aus dem Resampler holen
+        except (TypeError, ValueError):
+            pass  # sehr alte PyAV-Versionen kennen das Leeren nicht
+    finally:
+        container.close()
+    if not chunks:
+        return np.zeros(0, dtype=np.float32)
+    return (np.concatenate(chunks, axis=1).reshape(-1).astype(np.float32) / 32768.0)
+
+
 def transcribe(path: str, *, model: str, threads: int, beam_size: int, prompt: str = "") -> str:
     """Erkennt deutsche Sprache in einer Audiodatei. Rückgabe: Text (leer, wenn nichts gesagt wurde)."""
+    audio = decode(path)
+    if audio.size / SAMPLE_RATE > MAX_SECONDS:
+        raise ValueError(f"Die Aufnahme ist zu lang (höchstens {MAX_SECONDS // 60} Minuten).")
+    if audio.size < SAMPLE_RATE // 4:   # unter 0,25 s: nichts gesagt
+        return ""
     whisper = _load(model, threads)
     with _run_lock:
         start = time.monotonic()
         segments, info = whisper.transcribe(
-            path, language="de", beam_size=beam_size, vad_filter=True,
+            audio, language="de", beam_size=beam_size, vad_filter=True,
             condition_on_previous_text=False, initial_prompt=prompt or None)
         if info.duration > MAX_SECONDS:
             raise ValueError(f"Die Aufnahme ist zu lang (höchstens {MAX_SECONDS // 60} Minuten).")

@@ -252,9 +252,12 @@ einem gemeinsamen Stapel:
   darüber ebenso diskutieren. Das läuft sofort (ohne Batch-Rabatt) mit Claude Haiku: grob
   0,02–0,05 Cent pro Nachricht, ein Foto etwas mehr; die Kosten erscheinen unter „Kosten“ und
   zählen zum Monatsbudget. Der Verlauf wird nicht gespeichert.
-- **Diktieren:** über das Mikrofon der Handy-Tastatur geht es immer. Ein eigener Mikrofon-Knopf im
-  Antwortfeld erscheint nur, wenn die App über HTTPS geöffnet ist (Browser-Vorgabe) – siehe
-  „HTTPS über Tailscale“ unten.
+- **Sprechen:** Mit 🎤 nimmst du deine Antwort direkt in der App auf (■ beendet die Aufnahme). Der
+  Pi erkennt sie mit **Whisper** (lokal, nichts verlässt den Pi), der Text landet als deine
+  Nachricht im Chat. Die Kartenfrage hilft Whisper bei Fachbegriffen; Füllwörter und Versprecher
+  entfernt Claude beim Besprechen („Verstanden als …“). Rechne mit einigen Sekunden Wartezeit,
+  je nach Länge der Antwort. Die Aufnahme braucht HTTPS (Browser-Vorgabe) – siehe „HTTPS über
+  Tailscale“; über `http://` bleibt das Diktieren der Handy-Tastatur.
 - **Automatisch aussortiert** wird, was sicher nicht in die Klausur gehört: Organisatorisches
   (Termine, Abgaben, Anmeldung …), vom Dozenten ausdrücklich als „kommt nicht dran“ genannte
   Themen und Karten ohne Lerninhalt. Jede Karte wird einmal geprüft, sobald im Modul keine Notizen,
@@ -346,6 +349,9 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `ANSWER_PHOTO_MODEL` | (leer) | Modell für Fotos vom Rechenweg; leer = wie `ANSWER_CHECK_MODEL` (z. B. `claude-opus-5` für gründlichere Prüfung) |
 | `ANSWER_CHECK_EFFORT` | `low` | Denkaufwand beim Prüfen (höher = gründlicher, langsamer) |
 | `ANSWER_CHECK_MAX_TOKENS` | `4000` | Deckel für eine Prüfung (inkl. Denkprozess) |
+| `WHISPER_MODEL` | `small` | Spracherkennung auf dem Pi: `base` schneller, `medium` genauer, aber deutlich langsamer |
+| `WHISPER_BEAM` | `1` | `1` = schnell, `5` = etwas genauer und langsamer |
+| `WHISPER_THREADS` | `4` | CPU-Kerne für die Spracherkennung |
 | `CARDS_EFFORT` | `medium` | Denkaufwand für Karteikarten und Übungsaufgaben |
 | `CARDS_MAX_TOKENS` | `20000` | Deckel für die Karteikarten-Antwort |
 | `CARDS_SCRIPT_TOKENS` | `15000` | Wie viele Tokens zitierter Skriptseiten mitgeschickt werden |

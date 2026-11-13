@@ -72,6 +72,11 @@ class Settings:
     answer_photo_model: str = field(default_factory=lambda: _env("ANSWER_PHOTO_MODEL", ""))
     answer_check_effort: str = field(default_factory=lambda: _env("ANSWER_CHECK_EFFORT", "low"))
     answer_check_max_tokens: int = field(default_factory=lambda: int(_env("ANSWER_CHECK_MAX_TOKENS", "4000")))
+    # Spracherkennung auf dem Pi (Whisper über faster-whisper, CPU): Modellgröße tiny/base/small/
+    # medium – größer = genauer, aber langsamer. beam 1 = schnell, 5 = etwas genauer.
+    whisper_model: str = field(default_factory=lambda: _env("WHISPER_MODEL", "small"))
+    whisper_threads: int = field(default_factory=lambda: int(_env("WHISPER_THREADS", "4")))
+    whisper_beam: int = field(default_factory=lambda: int(_env("WHISPER_BEAM", "1")))
     # Wie viele neue Karten pro Tag beim Lernen dazukommen (über alle Module).
     new_cards_per_day: int = field(default_factory=lambda: int(_env("NEW_CARDS_PER_DAY", "20")))
 

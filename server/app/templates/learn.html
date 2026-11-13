@@ -44,7 +44,7 @@
   .check-input { display:flex; gap:8px; align-items:flex-start; }
   .answer-check textarea { flex:1; width:100%; font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line);
           background:var(--bg); color:var(--fg); resize:vertical; min-height:70px; }
-  .answer-check .mic { padding:6px 10px; font-size:18px; line-height:1; }
+  .answer-check .mic { padding:6px 10px; font-size:18px; line-height:1; white-space:nowrap; }
   .answer-check .mic.on { background:var(--err); border-color:var(--err); color:#fff; }
   .check-buttons { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-top:8px; }
   .photo-btn { display:inline-block; padding:6px 14px; border-radius:8px; border:1px solid var(--accent); color:var(--accent); cursor:pointer; }
@@ -63,8 +63,9 @@
   .msg .understood { font-size:13px; color:var(--muted); margin-top:4px; border-top:1px dashed var(--line); padding-top:4px; }
   .msg .hinweis { border-top:1px dashed var(--line); padding-top:4px; }
   .chat-photo { display:block; max-width:100%; max-height:240px; border-radius:6px; }
-  .chat-input { display:flex; gap:8px; align-items:flex-end; margin-top:6px; }
-  .chat-input textarea { flex:1; }
+  .chat-input { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; margin-top:6px; }
+  .chat-input textarea { flex:1 1 100%; }
+  .chat-input .mic { margin-right:auto; }
   .chat-input[hidden] { display:none; }
   .check-status { margin:4px 0 0; min-height:1em; }
   .grades button.suggested { outline:3px solid var(--fg); outline-offset:2px; }
@@ -109,7 +110,8 @@
     <div class="front">{{ view.front|safe }}</div>
     {% if not demo %}
     <div class="answer-check" id="check" data-url="{{ request.state.base }}/lernen/{{ card.id }}/antwort-pruefen"
-         data-kind="{{ card.kind }}">
+         data-speech-url="{{ request.state.base }}/lernen/{{ card.id }}/sprache"
+         data-prepare-url="{{ request.state.base }}/lernen/sprache/vorbereiten" data-kind="{{ card.kind }}">
       <p class="check-label">{% if card.kind == "aufgabe" %}Rechenweg besprechen <span class="muted">– auf Papier rechnen,
         Foto schicken, dann darüber reden (optional)</span>{% else %}Antwort besprechen <span class="muted">– antworte in
         eigenen Worten, dann diskutiere mit Claude über deine und die Musterantwort (optional)</span>{% endif %}</p>
@@ -123,7 +125,7 @@
       {% endif %}
       <div class="chat-input" id="chat-input"{% if card.kind == "aufgabe" %} hidden{% endif %}>
         <textarea id="chat-text" rows="2" placeholder="{{ 'Frag nach oder widersprich …' if card.kind == 'aufgabe' else 'Deine Antwort in eigenen Worten …' }}"></textarea>
-        <button type="button" class="secondary mic" id="chat-mic" hidden title="Diktieren" aria-label="Diktieren">🎤</button>
+        <button type="button" class="secondary mic" id="chat-mic" hidden title="Sprechen" aria-label="Antwort sprechen">🎤</button>
         <button type="button" id="chat-send">Senden</button>
       </div>
       <p class="muted check-status" id="check-status"></p>
@@ -286,22 +288,59 @@
     sendBtn.addEventListener("click", sendText);
     field.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) sendText(); });
 
-    // Diktieren über den Browser (nur über HTTPS); sonst das Mikrofon der Handy-Tastatur.
-    var SR = window.SpeechRecognition || window.webkitSpeechRecognition, micBtn = document.getElementById("chat-mic");
-    if (SR && window.isSecureContext && micBtn) {
+    // Sprechen: Aufnahme im Browser (nur über HTTPS), Erkennung mit Whisper auf dem Pi.
+    // Der erkannte Text geht direkt als Nachricht in den Chat.
+    var micBtn = document.getElementById("chat-mic");
+    var canRecord = window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
+                    window.MediaRecorder;
+    if (canRecord && micBtn) {
       micBtn.hidden = false;
-      var rec = null;
+      // Modell schon jetzt im Hintergrund laden, damit die erste Aufnahme nicht warten muss.
+      fetch(box.dataset.prepareUrl, {method: "POST"}).catch(function () {});
+      var recorder = null, chunks = [], timer = null, started = 0;
+      var mime = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].filter(function (t) {
+        return MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t);
+      })[0] || "";
+      function stopTracks() { if (recorder) recorder.stream.getTracks().forEach(function (t) { t.stop(); }); }
       micBtn.addEventListener("click", function () {
-        if (rec) { rec.stop(); return; }
-        rec = new SR(); rec.lang = "de-DE"; rec.interimResults = false; rec.continuous = true;
-        var start = field.value ? field.value.replace(/\s*$/, " ") : "";
-        rec.onresult = function (ev) {
-          var t = ""; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
-          field.value = start + t;
-        };
-        rec.onend = function () { rec = null; micBtn.classList.remove("on"); };
-        rec.onerror = rec.onend;
-        rec.start(); micBtn.classList.add("on");
+        if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+        if (sendBtn.disabled) return;
+        navigator.mediaDevices.getUserMedia({audio: true}).then(function (stream) {
+          chunks = [];
+          recorder = new MediaRecorder(stream, mime ? {mimeType: mime} : undefined);
+          recorder.ondataavailable = function (ev) { if (ev.data.size) chunks.push(ev.data); };
+          recorder.onstop = function () {
+            clearInterval(timer); stopTracks();
+            micBtn.classList.remove("on"); micBtn.textContent = "🎤";
+            var type = recorder.mimeType || mime || "audio/webm";
+            var blob = new Blob(chunks, {type: type});
+            if (!blob.size) { status.textContent = "Keine Aufnahme – bitte erneut versuchen."; return; }
+            var form = new FormData();
+            form.append("audio", blob, "antwort." + (type.indexOf("mp4") >= 0 ? "m4a" : "webm"));
+            sendBtn.disabled = true; micBtn.disabled = true; status.textContent = "Erkenne Sprache auf dem Pi …";
+            fetch(box.dataset.speechUrl, {method: "POST", body: form})
+              .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+              .then(function (res) {
+                sendBtn.disabled = false; micBtn.disabled = false;
+                if (!res.ok) { status.textContent = res.j.fehler || "Die Aufnahme ließ sich nicht auswerten."; return; }
+                if (!res.j.text) { status.textContent = "Ich habe nichts verstanden – bitte noch einmal sprechen."; return; }
+                field.value = (field.value.trim() ? field.value.trim() + " " : "") + res.j.text;
+                sendText();
+              })
+              .catch(function () { sendBtn.disabled = false; micBtn.disabled = false; status.textContent = "Keine Verbindung zum Server."; });
+          };
+          recorder.start();
+          started = Date.now();
+          micBtn.classList.add("on"); micBtn.textContent = "■ 0:00";
+          status.textContent = "Aufnahme läuft – zum Beenden auf ■ tippen.";
+          timer = setInterval(function () {
+            var sec = Math.floor((Date.now() - started) / 1000);
+            micBtn.textContent = "■ " + Math.floor(sec / 60) + ":" + ("0" + sec % 60).slice(-2);
+            if (sec >= 180) recorder.stop();  // Sicherheitsgrenze: 3 Minuten
+          }, 500);
+        }).catch(function () {
+          status.textContent = "Kein Zugriff aufs Mikrofon – bitte im Browser erlauben.";
+        });
       });
     }
 

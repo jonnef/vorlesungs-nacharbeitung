@@ -62,6 +62,14 @@ if [[ -n "${MONTHLY_BUDGET_USD:-}" ]]; then
   set_env MONTHLY_BUDGET_USD "$MONTHLY_BUDGET_USD"
 fi
 
+# ---------- Spracherkennung: Whisper-Modell vorab laden ----------
+# Einmalig ca. 460 MB (Modell „small“); schlägt der Download fehl, lädt die App es beim ersten Bedarf.
+WHISPER_MODEL="$(get_env WHISPER_MODEL)"
+WHISPER_MODEL="${WHISPER_MODEL:-small}"
+say "Lade Whisper-Modell $WHISPER_MODEL für die Spracherkennung (nur beim ersten Mal länger) …"
+.venv/bin/python -c "from faster_whisper import download_model; download_model('$WHISPER_MODEL')" >/dev/null 2>&1 \
+  || echo "Hinweis: Whisper-Modell konnte nicht vorab geladen werden – die App versucht es beim ersten Bedarf."
+
 # ---------- systemd-Dienst ----------
 say "Richte Dienst ein (startet automatisch mit dem Pi) …"
 sudo tee /etc/systemd/system/vorlesung.service > /dev/null <<EOF

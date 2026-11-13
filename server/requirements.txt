@@ -8,3 +8,4 @@ markdown-it-py>=3.0
 mdit-py-plugins>=0.4
 pypdfium2>=4.30
 pillow>=10.0
+faster-whisper>=1.1

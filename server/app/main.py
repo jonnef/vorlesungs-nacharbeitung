@@ -18,7 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import cards, conceptmap, demo, exam, glossary, hints, ordering, search, slides
+from . import answercheck, cards, conceptmap, demo, exam, glossary, hints, ordering, search, slides, speech
 from .config import settings
 from .db import Database
 from .render import render_inline, render_notes
@@ -35,6 +35,7 @@ templates.env.globals["initial"] = glossary.initial
 templates.env.globals["hint_kinds"] = hints.KINDS
 templates.env.globals["demo"] = settings.demo_mode
 templates.env.globals["demo_login_url"] = settings.demo_login_url
+templates.env.globals["photo_placeholder"] = answercheck.PHOTO_PLACEHOLDER
 
 
 def _worker(stop: threading.Event) -> None:
@@ -516,18 +517,15 @@ def learn_grade(request: Request, card_id: int, grade: int = Form(...), modul: s
 
 
 class AnswerIn(BaseModel):
-    answer: str = ""
+    messages: list[dict] = []
     image: str = ""
-    followup: str = ""
-    expectation: str = ""
 
 
 @app.post("/lernen/{card_id}/antwort-pruefen", dependencies=[Depends(web_auth)])
 def learn_check(card_id: int, body: AnswerIn):
-    """Antwort (Karteikarte) bzw. Foto vom Rechenweg (Aufgabe) sofort von Claude prüfen lassen."""
+    """Antwort bzw. Foto vom Rechenweg sofort mit Claude besprechen (Verlauf kommt vom Browser)."""
     try:
-        r = service.check_answer(card_id, answer=body.answer, image=body.image, followup=body.followup,
-                                 expectation=body.expectation)
+        r = service.check_answer(card_id, history=body.messages, image=body.image)
     except BudgetError as e:
         return JSONResponse({"fehler": str(e)}, status_code=402)
     except ValueError as e:
@@ -536,12 +534,52 @@ def learn_check(card_id: int, body: AnswerIn):
         log.error("Antwortprüfung für Karte %s fehlgeschlagen: %s", card_id, api_error_text(e))
         return JSONResponse({"fehler": f"Claude ist gerade nicht erreichbar: {api_error_text(e)}"}, status_code=502)
     # Texte mit Formeln schon hier in HTML umwandeln (KaTeX setzt sie im Browser).
-    r["rueckmeldung_html"] = render_inline(r["rueckmeldung"])
+    r["antwort_html"] = render_notes(r["antwort"])
     r["fehlt_html"] = [render_inline(f) for f in r["fehlt"]]
     r["fehler_html"] = render_inline(r["fehler"]) if r["fehler"] else ""
-    r["rueckfrage_html"] = render_inline(r["rueckfrage"]) if r["rueckfrage"] else ""
+    r["verstanden_html"] = render_inline(r["verstanden"]) if r["verstanden"] else ""
+    r["hinweis_html"] = render_inline(r["musterantwort_hinweis"]) if r["musterantwort_hinweis"] else ""
     r["vorschlag_text"] = cards.GRADES.get(r["vorschlag"]) if r["vorschlag"] else None
     return r
+
+
+@app.post("/lernen/sprache/vorbereiten", dependencies=[Depends(web_auth)])
+def speech_prepare():
+    """Lädt das Whisper-Modell im Hintergrund (die Lernseite ruft das beim Öffnen auf)."""
+    speech.preload(settings.whisper_model, settings.whisper_threads)
+    return {"ok": True}
+
+
+@app.post("/lernen/{card_id}/sprache", dependencies=[Depends(web_auth)])
+def speech_transcribe(card_id: int, audio: UploadFile = File(...)):
+    """Aufnahme aus dem Browser → Text (Whisper auf dem Pi). Die Kartenfrage hilft bei Fachbegriffen."""
+    card = service.card(card_id)
+    if not card or card["deleted_at"]:
+        return JSONResponse({"fehler": "Karte nicht gefunden."}, status_code=404)
+    suffix = {"audio/mp4": ".m4a", "audio/aac": ".m4a", "audio/ogg": ".ogg", "audio/wav": ".wav"}.get(
+        (audio.content_type or "").split(";")[0], ".webm")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        size = 0
+        with tmp:
+            while chunk := audio.file.read(1 << 20):
+                size += len(chunk)
+                if size > speech.MAX_AUDIO_BYTES:
+                    return JSONResponse({"fehler": "Die Aufnahme ist zu groß."}, status_code=400)
+                tmp.write(chunk)
+        _i, variant = cards.variant_for(card)
+        text = speech.transcribe(tmp.name, model=settings.whisper_model, threads=settings.whisper_threads,
+                                 beam_size=settings.whisper_beam, prompt=speech.prompt_for(variant["front"], card["topic"]))
+    except speech.SpeechUnavailable as e:
+        return JSONResponse({"fehler": str(e)}, status_code=503)
+    except ValueError as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+    except Exception as e:  # kaputte Aufnahme, unbekanntes Format …
+        log.warning("Spracherkennung fehlgeschlagen: %s", e)
+        return JSONResponse({"fehler": "Die Aufnahme ließ sich nicht auswerten."}, status_code=400)
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)
+    return {"text": text}
 
 
 def _safe_back(back: str, fallback: str = "/lernen") -> str:

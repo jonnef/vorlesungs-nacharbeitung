@@ -726,12 +726,12 @@ class Service:
 
     # ---------- Antworten prüfen (sofort) ----------
 
-    def check_answer(self, card_id: int, *, answer: str = "", image: str = "", followup: str = "",
-                     expectation: str = "") -> dict:
-        """Prüft eine Antwort zur aktuell gezeigten Variante der Karte.
+    def check_answer(self, card_id: int, *, history: list | None = None, image: str = "") -> dict:
+        """Bespricht die Antwort zur aktuell gezeigten Variante der Karte.
 
-        - Karteikarte: `answer` (und für die Rückfrage zusätzlich `followup` + `expectation`).
-        - Aufgabe: `image` (Data-URL bzw. Base64 eines Fotos vom Rechenweg).
+        - `history`: Gesprächsverlauf [{role, text}, …] aus dem Browser; die erste Nachricht ist
+          die Antwort auf die Karte, danach Diskussion. Endet mit einer Nachricht der/des Lernenden.
+        - `image`: Foto vom Rechenweg (nur Aufgaben) – startet das Gespräch.
         Läuft ohne Batch-API, damit die Antwort sofort kommt; Kosten gehen ins Monatsbudget.
         """
         card = self.card(card_id)
@@ -740,31 +740,24 @@ class Service:
         _i, variant = cards.variant_for(card)
         s = self.settings
         image_tokens = 0
+        reference = variant["back"] + (f"\n\nErgebnis: {variant['result']}" if variant.get("result") else "")
         if image:
             if card["kind"] != "aufgabe":
                 raise ValueError("Fotos lassen sich nur bei Aufgaben prüfen.")
             image_b64, image_tokens = answercheck.prepare_image(image)
-            model = s.answer_photo_model or s.answer_check_model
             params = answercheck.photo_request(
-                model=model, effort=s.answer_check_effort, max_tokens=s.answer_check_max_tokens,
-                task=variant["front"], solution=variant["back"], result=variant.get("result", ""), image_b64=image_b64)
+                model=s.answer_photo_model or s.answer_check_model, effort=s.answer_check_effort,
+                max_tokens=s.answer_check_max_tokens, task=variant["front"], solution=variant["back"],
+                result=variant.get("result", ""), image_b64=image_b64)
             note = f"Rechenweg geprüft (Karte {card_id})"
         else:
-            answer = answer.strip()
-            if not answer:
-                raise ValueError("Bitte zuerst eine Antwort eingeben.")
-            if len(answer) > 4000:
-                raise ValueError("Die Antwort ist zu lang (höchstens 4000 Zeichen).")
-            common = {"model": s.answer_check_model, "effort": s.answer_check_effort,
-                      "max_tokens": s.answer_check_max_tokens, "question": variant["front"],
-                      "reference": variant["back"], "answer": answer}
-            if followup:
-                params = answercheck.followup_request(**common, followup=followup[:1000],
-                                                      expectation=expectation[:1000])
-                note = f"Rückfrage geprüft (Karte {card_id})"
-            else:
-                params = answercheck.text_request(**common)
-                note = f"Antwort geprüft (Karte {card_id})"
+            msgs = answercheck.clean_history(history or [])
+            params = answercheck.chat_request(
+                model=s.answer_check_model, effort=s.answer_check_effort, max_tokens=s.answer_check_max_tokens,
+                question=variant["front"], reference=reference, history=msgs,
+                photo_context=msgs[0]["text"] == answercheck.PHOTO_PLACEHOLDER)
+            note = (f"Antwort geprüft (Karte {card_id})" if len(msgs) == 1
+                    else f"Antwort besprochen (Karte {card_id})")
         worst = pricing.worst_case_usd(params["model"], answercheck.estimate_tokens(params, image_tokens),
                                        params["max_tokens"], batch=False)
         left = self.budget_left_usd()
@@ -784,12 +777,13 @@ class Service:
         if msg.stop_reason == "refusal":
             raise ValueError("Claude hat die Prüfung abgelehnt.")
         if msg.stop_reason == "max_tokens":
-            raise ValueError("Die Prüfung wurde abgeschnitten (ANSWER_CHECK_MAX_TOKENS erhöhen).")
+            raise ValueError("Die Antwort wurde abgeschnitten (ANSWER_CHECK_MAX_TOKENS erhöhen).")
         text = "".join(b.text for b in msg.content if b.type == "text").strip()
         try:
             result = answercheck.parse(text)
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Antwort von Claude nicht lesbar: {e}") from e
+        result["verlauf_text"] = answercheck.history_text(result)  # für die nächste Nachricht
         result["kosten_usd"] = cost
         return result
 

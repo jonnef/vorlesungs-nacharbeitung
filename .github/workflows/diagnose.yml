@@ -1,0 +1,30 @@
+name: Diagnose
+
+# Von Hand starten (GitHub → Actions → Diagnose → „Run workflow“, geht auch in der GitHub-App):
+# zeigt Zustand und Logs der Web-App auf dem Pi und testet die Spracherkennung – ohne SSH.
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, pi]
+    timeout-minutes: 15
+    steps:
+      - name: System (Speicher, Last, Plattenplatz)
+        run: |
+          uname -a
+          uptime
+          free -h
+          df -h ~ | tail -1
+          echo "--- größte Speicherverbraucher ---"
+          ps -eo pid,rss,comm --sort=-rss | head -8
+      - name: Dienst der Web-App
+        run: systemctl status vorlesung --no-pager -l | head -20 || true
+      - name: Letzte Logs der Web-App (200 Zeilen)
+        run: sudo journalctl -u vorlesung -n 200 --no-pager -o short-iso || true
+      - name: Hinweise auf beendete Prozesse (Speicher voll?)
+        run: sudo journalctl -k --since "-2 days" --no-pager | grep -i -E "out of memory|oom|killed process" | tail -20 || echo "keine"
+      - name: Whisper-Modelle im Cache
+        run: du -sh ~/.cache/huggingface/hub/* 2>/dev/null || echo "kein Modell im Cache"
+      - name: Selbsttest Spracherkennung
+        run: cd ~/vorlesungs-nacharbeitung/server && timeout 600 .venv/bin/python -m app.speech_check

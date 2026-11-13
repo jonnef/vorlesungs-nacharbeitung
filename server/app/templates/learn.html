@@ -317,17 +317,30 @@
             if (!blob.size) { status.textContent = "Keine Aufnahme – bitte erneut versuchen."; return; }
             var form = new FormData();
             form.append("audio", blob, "antwort." + (type.indexOf("mp4") >= 0 ? "m4a" : "webm"));
-            sendBtn.disabled = true; micBtn.disabled = true; status.textContent = "Erkenne Sprache auf dem Pi …";
+            sendBtn.disabled = true; micBtn.disabled = true;
+            var waitStart = Date.now();
+            var waitTimer = setInterval(function () {
+              status.textContent = "Erkenne Sprache auf dem Pi … " + Math.floor((Date.now() - waitStart) / 1000) + " s";
+            }, 1000);
+            status.textContent = "Erkenne Sprache auf dem Pi …";
             fetch(box.dataset.speechUrl, {method: "POST", body: form})
-              .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+              .then(function (r) {
+                return r.json().catch(function () {
+                  return {fehler: "Der Server hat nicht richtig geantwortet (HTTP " + r.status + ")."};
+                }).then(function (j) { return {ok: r.ok, j: j}; });
+              })
               .then(function (res) {
+                clearInterval(waitTimer);
                 sendBtn.disabled = false; micBtn.disabled = false;
                 if (!res.ok) { status.textContent = res.j.fehler || "Die Aufnahme ließ sich nicht auswerten."; return; }
                 if (!res.j.text) { status.textContent = "Ich habe nichts verstanden – bitte noch einmal sprechen."; return; }
                 field.value = (field.value.trim() ? field.value.trim() + " " : "") + res.j.text;
                 sendText();
               })
-              .catch(function () { sendBtn.disabled = false; micBtn.disabled = false; status.textContent = "Keine Verbindung zum Server."; });
+              .catch(function () {
+                clearInterval(waitTimer);
+                sendBtn.disabled = false; micBtn.disabled = false; status.textContent = "Keine Verbindung zum Server.";
+              });
           };
           recorder.start();
           started = Date.now();

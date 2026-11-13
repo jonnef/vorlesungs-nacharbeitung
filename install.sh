@@ -82,6 +82,19 @@ TOKEN="$(pi "grep -m1 '^API_TOKEN=' ~/vorlesungs-nacharbeitung/server/.env | cut
 [[ -n "$TOKEN" ]] || die "API_TOKEN konnte nicht vom Pi gelesen werden."
 SERVER="http://$PI_HOST:8000"
 
+# Einmalig: automatisches Deployment nach jedem Merge auf main (GitHub-Actions-Runner auf dem Pi)
+if ! pi "test -f ~/actions-runner-vorlesungen/.runner"; then
+  echo
+  echo "Automatisches Deployment: Nach jedem Merge auf main aktualisiert sich der Pi selbst."
+  echo "Dafür einmalig einen Token von GitHub holen: Repository → Settings → Actions → Runners →"
+  echo "„New self-hosted runner“ (Linux, ARM64) – der Wert hinter --token, gilt eine Stunde."
+  ask RUNNER "Jetzt einrichten? (j/n)" "n"
+  if [[ "$RUNNER" == [jJyY]* ]]; then
+    ssh -t "${SSH_OPTS[@]}" "$PI" "bash ~/vorlesungs-nacharbeitung/scripts/install-runner.sh" \
+      || echo "Runner-Einrichtung fehlgeschlagen – später erneut: ./install.sh oder update-pi-mac.command"
+  fi
+fi
+
 # ---------- Mac ----------
 bold "2/3 Mac: Programme und Whisper-Modell"
 if ! command -v brew >/dev/null; then

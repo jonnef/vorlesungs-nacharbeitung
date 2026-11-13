@@ -38,8 +38,22 @@ set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" (
   echo Das Update ist fehlgeschlagen - siehe Meldungen oben.
-) else (
-  echo Fertig. Weboberflaeche: http://raspberrypi.local:8000
+  echo.
+  pause
+  exit /b 1
 )
+echo Fertig. Weboberflaeche: http://raspberrypi.local:8000
+echo.
+
+rem Einmalig: Runner fuer automatisches Deployment nach jedem Merge auf main einrichten.
+echo Automatisches Deployment: Nach jedem Merge auf main aktualisiert sich der Pi selbst.
+echo Dafuer braucht es einmalig einen Token von GitHub: Repository - Settings - Actions -
+echo Runners - "New self-hosted runner" (Wert hinter --token, gilt eine Stunde).
+set "RUNNER="
+set /p "RUNNER=Jetzt einrichten? (j/N): "
+if /i not "%RUNNER%"=="j" goto ende
+ssh -t %PI% "bash ~/vorlesungs-nacharbeitung-src/scripts/install-runner.sh"
+
+:ende
 echo.
 pause

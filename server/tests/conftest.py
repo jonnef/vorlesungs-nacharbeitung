@@ -100,7 +100,30 @@ class FakeClient:
                 {"von": "Eigenwert", "nach": "Erfunden", "art": "teil", "beschriftung": "unbekannt"},
             ]})
         self.counted = []
-        self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self))
+        self.messages = SimpleNamespace(count_tokens=self._count, batches=FakeBatches(self), create=self._create)
+        self.created = []  # Sofort-Aufrufe (Antwortprüfung)
+        self.check_stop_reason = "end_turn"
+
+    def with_options(self, **_):
+        return self
+
+    def _create(self, **params):
+        """Antwortprüfung: liefert je nach Prompt eine passende JSON-Bewertung."""
+        self.created.append(params)
+        system = params["system"]
+        if "handschriftlichen Rechenweg" in system:
+            data = {"bewertung": "teilweise", "rueckmeldung": "Ansatz stimmt, aber $\\lambda_2$ ist falsch.",
+                    "fehlt": ["Probe"], "fehler": "Zeile 3: Vorzeichenfehler."}
+        elif "Rückfrage gestellt" in system:
+            data = {"bewertung": "richtig", "rueckmeldung": "Genau.", "fehlt": []}
+        else:
+            data = {"bewertung": "falsch", "rueckmeldung": "Es fehlt $v \\neq 0$.", "fehlt": ["$v \\neq 0$"],
+                    "rueckfrage": "Warum muss $v \\neq 0$ sein?", "rueckfrage_erwartung": "Sonst gilt es für jedes λ."}
+        return SimpleNamespace(
+            model=params["model"], stop_reason=self.check_stop_reason,
+            content=[SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=json.dumps(data))],
+            usage=SimpleNamespace(input_tokens=800, output_tokens=300, cache_creation_input_tokens=0,
+                                  cache_read_input_tokens=0))
 
     @staticmethod
     def cardcheck_answer(params):

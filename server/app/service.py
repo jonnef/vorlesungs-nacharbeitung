@@ -12,7 +12,7 @@ import anthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 
-from . import cardcheck, cards, conceptmap, exam, glossary, hints, lecture_slides, pricing
+from . import answercheck, cardcheck, cards, conceptmap, exam, glossary, hints, lecture_slides, pricing
 from .config import Settings
 from .db import Database, now
 from .prompt import build_request, validate_citations
@@ -723,6 +723,75 @@ class Service:
         with self.db.connect() as conn:
             conn.execute("UPDATE cards SET suspended = ?, archive_reason = NULL, checked_at = COALESCE(checked_at, ?),"
                          " kept = 1 WHERE id = ?", (int(archived), now(), card_id))
+
+    # ---------- Antworten prüfen (sofort) ----------
+
+    def check_answer(self, card_id: int, *, answer: str = "", image: str = "", followup: str = "",
+                     expectation: str = "") -> dict:
+        """Prüft eine Antwort zur aktuell gezeigten Variante der Karte.
+
+        - Karteikarte: `answer` (und für die Rückfrage zusätzlich `followup` + `expectation`).
+        - Aufgabe: `image` (Data-URL bzw. Base64 eines Fotos vom Rechenweg).
+        Läuft ohne Batch-API, damit die Antwort sofort kommt; Kosten gehen ins Monatsbudget.
+        """
+        card = self.card(card_id)
+        if not card or card["deleted_at"]:
+            raise ValueError("Karte nicht gefunden.")
+        _i, variant = cards.variant_for(card)
+        s = self.settings
+        image_tokens = 0
+        if image:
+            if card["kind"] != "aufgabe":
+                raise ValueError("Fotos lassen sich nur bei Aufgaben prüfen.")
+            image_b64, image_tokens = answercheck.prepare_image(image)
+            model = s.answer_photo_model or s.answer_check_model
+            params = answercheck.photo_request(
+                model=model, effort=s.answer_check_effort, max_tokens=s.answer_check_max_tokens,
+                task=variant["front"], solution=variant["back"], result=variant.get("result", ""), image_b64=image_b64)
+            note = f"Rechenweg geprüft (Karte {card_id})"
+        else:
+            answer = answer.strip()
+            if not answer:
+                raise ValueError("Bitte zuerst eine Antwort eingeben.")
+            if len(answer) > 4000:
+                raise ValueError("Die Antwort ist zu lang (höchstens 4000 Zeichen).")
+            common = {"model": s.answer_check_model, "effort": s.answer_check_effort,
+                      "max_tokens": s.answer_check_max_tokens, "question": variant["front"],
+                      "reference": variant["back"], "answer": answer}
+            if followup:
+                params = answercheck.followup_request(**common, followup=followup[:1000],
+                                                      expectation=expectation[:1000])
+                note = f"Rückfrage geprüft (Karte {card_id})"
+            else:
+                params = answercheck.text_request(**common)
+                note = f"Antwort geprüft (Karte {card_id})"
+        worst = pricing.worst_case_usd(params["model"], answercheck.estimate_tokens(params, image_tokens),
+                                       params["max_tokens"], batch=False)
+        left = self.budget_left_usd()
+        if worst > left:
+            raise BudgetError(f"Monatsbudget reicht nicht für die Prüfung ({left:.2f} USD verfügbar).")
+        msg = self.client.with_options(timeout=90).messages.create(**params)
+        u = msg.usage
+        cost = pricing.cost_usd(msg.model if msg.model in pricing.PRICES else params["model"], u.input_tokens,
+                                u.output_tokens, u.cache_creation_input_tokens or 0, u.cache_read_input_tokens or 0,
+                                batch=False)
+        with self.db.connect() as conn:
+            conn.execute(
+                "INSERT INTO usage_log (job_id, model, input_tokens, output_tokens, cache_creation_tokens,"
+                " cache_read_tokens, cost_usd, created_at, note) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (msg.model, u.input_tokens, u.output_tokens, u.cache_creation_input_tokens or 0,
+                 u.cache_read_input_tokens or 0, cost, now(), note))
+        if msg.stop_reason == "refusal":
+            raise ValueError("Claude hat die Prüfung abgelehnt.")
+        if msg.stop_reason == "max_tokens":
+            raise ValueError("Die Prüfung wurde abgeschnitten (ANSWER_CHECK_MAX_TOKENS erhöhen).")
+        text = "".join(b.text for b in msg.content if b.type == "text").strip()
+        try:
+            result = answercheck.parse(text)
+        except (json.JSONDecodeError, ValueError) as e:
+            raise ValueError(f"Antwort von Claude nicht lesbar: {e}") from e
+        result["kosten_usd"] = cost
+        return result
 
     # ---------- Karten aussortieren ----------
 

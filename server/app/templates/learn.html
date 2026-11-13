@@ -39,6 +39,24 @@
   .card-manage { display:inline-flex; gap:16px; }
   .card-actions button.link.danger { color:var(--err); }
   .card-actions button.link { background:none; border:0; padding:0; color:var(--muted); text-decoration:underline; font-size:14px; }
+  .answer-check { margin-top:16px; padding-top:12px; border-top:1px dashed var(--line); }
+  .check-label { display:block; font-size:15px; margin:0 0 6px; }
+  .check-input { display:flex; gap:8px; align-items:flex-start; }
+  .answer-check textarea { flex:1; width:100%; font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line);
+          background:var(--bg); color:var(--fg); resize:vertical; min-height:70px; }
+  .answer-check .mic { padding:6px 10px; font-size:18px; line-height:1; }
+  .answer-check .mic.on { background:var(--err); border-color:var(--err); color:#fff; }
+  .check-buttons { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-top:8px; }
+  .photo-btn { display:inline-block; padding:6px 14px; border-radius:8px; border:1px solid var(--accent); color:var(--accent); cursor:pointer; }
+  .check-preview { display:block; max-width:100%; max-height:260px; margin-top:8px; border-radius:6px; border:1px solid var(--line); }
+  .check-result { margin-top:10px; padding:10px 12px; border-radius:8px; border:1px solid var(--line);
+          border-left:4px solid var(--c, var(--muted)); background:color-mix(in srgb, var(--c, var(--muted)) 7%, var(--card)); }
+  .check-result.richtig { --c:var(--ok); } .check-result.teilweise { --c:var(--warn); }
+  .check-result.falsch { --c:var(--err); } .check-result.unleserlich { --c:var(--muted); }
+  .check-result .verdict { font-weight:600; }
+  .check-result p { margin:.3em 0; } .check-result ul { margin:.3em 0; padding-left:1.2em; }
+  .check-followup { margin-top:12px; }
+  .grades button.suggested { outline:3px solid var(--fg); outline-offset:2px; }
   .kbd-hint { font-size:13px; color:var(--muted); text-align:center; margin-top:8px; }
   @media (hover: none) { .kbd-hint { display:none; } }
   @media (max-width: 480px) { .learn-card { padding:16px; } .grades { gap:6px; }
@@ -78,6 +96,38 @@
   </div>
   <article class="notes">
     <div class="front">{{ view.front|safe }}</div>
+    {% if not demo %}
+    <div class="answer-check" id="check" data-url="{{ request.state.base }}/lernen/{{ card.id }}/antwort-pruefen">
+      {% if card.kind == "karte" %}
+      <label for="check-answer" class="check-label">Deine Antwort <span class="muted">– tippen oder diktieren, dann prüfen lassen (optional)</span></label>
+      <div class="check-input">
+        <textarea id="check-answer" rows="3" placeholder="Erkläre in eigenen Worten …"></textarea>
+        <button type="button" class="secondary mic" id="check-mic" hidden title="Diktieren" aria-label="Diktieren">🎤</button>
+      </div>
+      <div class="check-buttons"><button type="button" id="check-send">Antwort prüfen</button>
+        <span class="muted check-status" id="check-status" aria-live="polite"></span></div>
+      {% else %}
+      <label for="check-photo" class="check-label">Rechenweg prüfen lassen <span class="muted">– auf Papier rechnen, Foto machen (optional)</span></label>
+      <div class="check-buttons">
+        <label class="photo-btn secondary"><input type="file" id="check-photo" accept="image/*" capture="environment" hidden>📷 Foto vom Rechenweg</label>
+        <button type="button" id="check-send" disabled>Rechenweg prüfen</button>
+        <span class="muted check-status" id="check-status" aria-live="polite"></span>
+      </div>
+      <img id="check-preview" class="check-preview" alt="Dein Rechenweg" hidden>
+      {% endif %}
+      <div id="check-result" class="check-result" hidden></div>
+      <div id="check-followup" class="check-followup" hidden>
+        <p class="check-label"><strong>Rückfrage:</strong> <span id="followup-q"></span></p>
+        <div class="check-input">
+          <textarea id="followup-answer" rows="2" placeholder="Deine Antwort auf die Rückfrage …"></textarea>
+          <button type="button" class="secondary mic" id="followup-mic" hidden title="Diktieren" aria-label="Diktieren">🎤</button>
+        </div>
+        <div class="check-buttons"><button type="button" id="followup-send">Antwort senden</button>
+          <span class="muted check-status" id="followup-status" aria-live="polite"></span></div>
+        <div id="followup-result" class="check-result" hidden></div>
+      </div>
+    </div>
+    {% endif %}
     <details class="answer" id="answer">
       <summary>{{ "Lösung zeigen" if card.kind == "aufgabe" else "Antwort zeigen" }}</summary>
       <div class="back">{{ view.back|safe }}</div>
@@ -154,6 +204,7 @@
     form.addEventListener("change", function () { form.submit(); });
     var answer = document.getElementById("answer");
     if (!answer) return;
+    setupCheck(answer);
     document.addEventListener("keydown", function (ev) {
       if (ev.target.closest("input, select, textarea") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       if (!answer.open && (ev.key === " " || ev.key === "Enter")) {
@@ -165,5 +216,111 @@
       }
     });
   })();
+
+  // Antwort von Claude prüfen lassen (Karteikarte: Text, Aufgabe: Foto vom Rechenweg).
+  function setupCheck(answer) {
+    var box = document.getElementById("check");
+    if (!box) return;
+    var url = box.dataset.url, followupData = null, photo = null;
+    var LABELS = {richtig: "Richtig", teilweise: "Teilweise richtig", falsch: "Noch nicht richtig", unleserlich: "Nicht lesbar"};
+
+    function math(el) {
+      if (!window.katex) return;
+      el.querySelectorAll(".math").forEach(function (m) {
+        try { katex.render(m.textContent, m, {displayMode: m.classList.contains("block"), throwOnError: false}); } catch (e) {}
+      });
+    }
+    function send(payload, status, button, done) {
+      button.disabled = true; status.textContent = "Claude prüft …";
+      fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)})
+        .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+        .then(function (res) {
+          button.disabled = false;
+          if (!res.ok) { status.textContent = res.j.fehler || "Prüfung fehlgeschlagen."; return; }
+          status.textContent = ""; done(res.j);
+        })
+        .catch(function () { button.disabled = false; status.textContent = "Keine Verbindung zum Server."; });
+    }
+    function show(el, r) {
+      var html = '<div class="verdict">' + (LABELS[r.bewertung] || r.bewertung) + "</div>";
+      if (r.rueckmeldung_html) html += "<p>" + r.rueckmeldung_html + "</p>";
+      if (r.fehler_html) html += "<p><strong>Erster Fehler:</strong> " + r.fehler_html + "</p>";
+      if (r.fehlt_html && r.fehlt_html.length) html += "<ul><li>" + r.fehlt_html.join("</li><li>") + "</li></ul>";
+      if (r.vorschlag_text) html += '<p class="muted">Vorschlag: <strong>' + r.vorschlag_text + "</strong> – entscheiden tust du.</p>";
+      el.className = "check-result " + r.bewertung; el.innerHTML = html; el.hidden = false; math(el);
+      answer.open = true;
+      answer.querySelectorAll(".grades button").forEach(function (b) {
+        b.classList.toggle("suggested", String(r.vorschlag) === b.value);
+      });
+    }
+    function mic(button, field) {
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR || !window.isSecureContext || !button) return;  // ohne HTTPS: Diktieren über die Tastatur
+      button.hidden = false;
+      var rec = null;
+      button.addEventListener("click", function () {
+        if (rec) { rec.stop(); return; }
+        rec = new SR(); rec.lang = "de-DE"; rec.interimResults = false; rec.continuous = true;
+        var start = field.value ? field.value.replace(/\s*$/, " ") : "";
+        rec.onresult = function (ev) {
+          var t = ""; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+          field.value = start + t;
+        };
+        rec.onend = function () { rec = null; button.classList.remove("on"); };
+        rec.onerror = rec.onend;
+        rec.start(); button.classList.add("on");
+      });
+    }
+
+    var sendBtn = document.getElementById("check-send"), status = document.getElementById("check-status");
+    var result = document.getElementById("check-result"), field = document.getElementById("check-answer");
+    var fu = document.getElementById("check-followup");
+    if (field) {
+      mic(document.getElementById("check-mic"), field);
+      var run = function () {
+        send({answer: field.value}, status, sendBtn, function (r) {
+          show(result, r);
+          if (r.rueckfrage) {
+            followupData = {question: r.rueckfrage, expectation: r.rueckfrage_erwartung};
+            document.getElementById("followup-q").innerHTML = r.rueckfrage_html; math(fu);
+            fu.hidden = false;
+            document.getElementById("followup-result").hidden = true;
+            sendBtn.textContent = "Erneut prüfen";
+          }
+        });
+      };
+      sendBtn.addEventListener("click", run);
+      field.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) run(); });
+      var fField = document.getElementById("followup-answer"), fBtn = document.getElementById("followup-send");
+      mic(document.getElementById("followup-mic"), fField);
+      fBtn.addEventListener("click", function () {
+        send({answer: fField.value, followup: followupData.question, expectation: followupData.expectation},
+             document.getElementById("followup-status"), fBtn,
+             function (r) { show(document.getElementById("followup-result"), r); });
+      });
+    } else {
+      var input = document.getElementById("check-photo"), preview = document.getElementById("check-preview");
+      input.addEventListener("change", function () {
+        var file = input.files && input.files[0];
+        if (!file) return;
+        var img = new Image(), reader = new FileReader();
+        reader.onload = function () { img.src = reader.result; };
+        img.onload = function () {
+          // im Browser verkleinern: schneller hochgeladen, und auch iPhone-Fotos (HEIC) kommen als JPEG an
+          var max = 1568, scale = Math.min(1, max / Math.max(img.width, img.height));
+          var c = document.createElement("canvas");
+          c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          photo = c.toDataURL("image/jpeg", 0.85);
+          preview.src = photo; preview.hidden = false; sendBtn.disabled = false; status.textContent = "";
+        };
+        img.onerror = function () { status.textContent = "Das Foto ließ sich nicht öffnen."; };
+        reader.readAsDataURL(file);
+      });
+      sendBtn.addEventListener("click", function () {
+        if (photo) send({image: photo}, status, sendBtn, function (r) { show(result, r); });
+      });
+    }
+  }
 </script>
 {% endblock %}

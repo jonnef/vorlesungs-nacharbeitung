@@ -83,6 +83,42 @@ eingebaut), holt den Stand von GitHub nach `~/vorlesungs-nacharbeitung-src` auf 
 `scripts/update-pi.sh` aus. Daten und `.env` bleiben erhalten. Direkt auf dem Pi geht dasselbe mit
 `bash ~/vorlesungs-nacharbeitung-src/scripts/update-pi.sh` (nach `git pull` im Klon).
 
+### Automatisches Deployment (nach jedem Merge auf main)
+
+Wie bei der Budget Book App: Auf dem Pi läuft ein GitHub-Actions-Runner. Workflow
+`.github/workflows/ci-deploy.yml`:
+
+1. Bei jedem Pull Request laufen die Tests auf GitHub (grünes Häkchen bzw. rotes Kreuz im PR).
+2. Nach einem Merge auf `main` laufen sie noch einmal; sind sie grün, führt der Runner auf dem Pi
+   `scripts/update-pi.sh` aus. Das Skript sichert vorher die Datenbank
+   (`server/data/backups/`, die neuesten 10) und spielt den vorigen Stand zurück, wenn die App
+   nach dem Update nicht antwortet – der Lauf wird dann rot.
+3. Von Hand neu deployen: GitHub → Actions → „Tests & Deployment“ → „Run workflow“.
+
+**Einmalig einrichten** (eigener Runner, unabhängig vom Budget-Book-Runner der Organisation):
+
+1. GitHub → dieses Repository → Settings → Actions → Runners → „New self-hosted runner“ →
+   Linux / ARM64. Den Token aus der Zeile `./config.sh … --token XXXX` kopieren (gilt eine Stunde).
+2. Einen dieser Wege nehmen und bei „Jetzt einrichten?“ mit `j` antworten, Token einfügen:
+   - **Mac:** im Repo `git pull`, dann `update-pi-mac.command` im Finder doppelklicken
+     (oder `./install.sh` – fragt ebenfalls, solange noch kein Runner eingerichtet ist).
+   - **Windows:** `update-pi-windows.bat` (Branch: Enter für `main`).
+   - **Handy** (SSH-App wie Termius, Verbindung über Tailscale oder WLAN): als der Benutzer
+     anmelden, unter dem die App läuft, und diese Zeile einfügen:
+
+     ```bash
+     cd ~ && { [ -d vorlesungs-nacharbeitung-src/.git ] || git clone https://github.com/jonnef/vorlesungs-nacharbeitung.git vorlesungs-nacharbeitung-src; } && cd vorlesungs-nacharbeitung-src && git fetch -q origin && git checkout -q -B main origin/main && bash scripts/update-pi.sh && bash scripts/install-runner.sh
+     ```
+3. Unter Settings → Actions → Runners steht der Runner danach als „Idle“.
+
+Das Repository ist privat – ein Runner auf dem eigenen Gerät darf nicht an einem öffentlichen
+Repository hängen, sonst könnten Pull Requests aus Forks Code auf dem Pi ausführen. Die `.bat`
+fragt bei einem privaten Repository nach GitHub-Zugangsdaten (Benutzername + Personal Access
+Token); sie wird nach der Einrichtung aber nur noch als Notlösung gebraucht.
+
+Log eines Deployments: GitHub → Actions → jeweiliger Lauf; auf dem Pi
+`journalctl -u 'actions.runner.*vorlesungen*' -n 50`.
+
 Nützliches danach:
 
 | | |
@@ -206,6 +242,16 @@ einem gemeinsamen Stapel:
 - Karten **archivieren** (kommen nicht mehr dran, wiederherstellbar) oder **löschen** (endgültig;
   entstehen auch bei einer neuen Fassung der Notizen nicht wieder) – direkt beim Lernen oder unter
   „Karten verwalten“, wo alle Karten nach Modul, aktiv/archiviert und per Suche aufgelistet sind.
+- **Antworten prüfen lassen** (optional): Bei Karteikarten tippst oder diktierst du deine Antwort
+  und tippst auf „Antwort prüfen“. Claude sagt sofort, ob sie stimmt, was fehlt, und schlägt einen
+  Knopf vor (falsch → Nochmal, teilweise → Schwer, richtig → Gut). Danach kannst du eine
+  **Rückfrage** beantworten, die dein Verständnis hinterfragt. Bei Aufgaben rechnest du auf Papier
+  und schickst ein **Foto vom Rechenweg** – Claude sagt, wo der erste Fehler steckt. Das läuft
+  sofort (ohne Batch-Rabatt) mit Claude Haiku: grob 0,02 Cent pro Prüfung, ein Foto etwas mehr;
+  die Kosten erscheinen unter „Kosten“ und zählen zum Monatsbudget.
+- **Diktieren:** über das Mikrofon der Handy-Tastatur geht es immer. Ein eigener Mikrofon-Knopf im
+  Antwortfeld erscheint nur, wenn die App über HTTPS geöffnet ist (Browser-Vorgabe) – siehe
+  „HTTPS über Tailscale“ unten.
 - **Automatisch aussortiert** wird, was sicher nicht in die Klausur gehört: Organisatorisches
   (Termine, Abgaben, Anmeldung …), vom Dozenten ausdrücklich als „kommt nicht dran“ genannte
   Themen und Karten ohne Lerninhalt. Jede Karte wird einmal geprüft, sobald im Modul keine Notizen,
@@ -253,6 +299,19 @@ mit aufklappbarer Antwort und einer Checkliste zum Abhaken.
   als `Studium/<Modul>/Klausurvorbereitung.md` in iCloud ab.
 - Kosten: je nach Anzahl der Vorlesungen etwa 0,20–0,60 $ pro Fassung (Batch-Preise).
 
+## HTTPS über Tailscale (optional)
+
+Über `http://<IP>:8000` funktioniert alles außer dem Mikrofon-Knopf beim Lernen – Browser geben
+das Mikrofon nur auf HTTPS-Seiten frei. Mit Tailscale bekommt der Pi eine HTTPS-Adresse mit
+gültigem Zertifikat, erreichbar nur in deinem Tailnet:
+
+1. In der Tailscale-Verwaltung unter **DNS** „MagicDNS“ und „HTTPS Certificates“ einschalten.
+2. Auf dem Pi: `sudo tailscale serve --bg 8000`
+3. Die App ist dann unter `https://<pi-name>.<tailnet>.ts.net` erreichbar (`tailscale serve status`
+   zeigt die Adresse).
+
+Rückgängig: `sudo tailscale serve --https=443 off`.
+
 ## Entwicklung
 
 ```bash
@@ -280,6 +339,10 @@ Die Tests ersetzen den Claude-Client durch eine Attrappe und kosten nichts.
 | `CONCEPTMAP_MAX_TERMS` | `80` | Höchstens so viele Begriffe auf der Map – bei größeren Glossaren die zentralen |
 | `CARDCHECK_EFFORT` | `medium` | Denkaufwand beim Aussortieren der Karten |
 | `CARDCHECK_MAX_TOKENS` | `8000` | Deckel für die Antwort beim Aussortieren |
+| `ANSWER_CHECK_MODEL` | `claude-haiku-5-5` | Modell für das Prüfen von Antworten beim Lernen (sofort, ohne Batch) |
+| `ANSWER_PHOTO_MODEL` | (leer) | Modell für Fotos vom Rechenweg; leer = wie `ANSWER_CHECK_MODEL` (z. B. `claude-opus-5` für gründlichere Prüfung) |
+| `ANSWER_CHECK_EFFORT` | `low` | Denkaufwand beim Prüfen (höher = gründlicher, langsamer) |
+| `ANSWER_CHECK_MAX_TOKENS` | `4000` | Deckel für eine Prüfung (inkl. Denkprozess) |
 | `CARDS_EFFORT` | `medium` | Denkaufwand für Karteikarten und Übungsaufgaben |
 | `CARDS_MAX_TOKENS` | `20000` | Deckel für die Karteikarten-Antwort |
 | `CARDS_SCRIPT_TOKENS` | `15000` | Wie viele Tokens zitierter Skriptseiten mitgeschickt werden |

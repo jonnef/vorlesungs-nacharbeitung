@@ -515,6 +515,35 @@ def learn_grade(request: Request, card_id: int, grade: int = Form(...), modul: s
     return _redirect(request, "/lernen" + _learn_query(_learn_filters(modul, art, ohne_tr)))
 
 
+class AnswerIn(BaseModel):
+    answer: str = ""
+    image: str = ""
+    followup: str = ""
+    expectation: str = ""
+
+
+@app.post("/lernen/{card_id}/antwort-pruefen", dependencies=[Depends(web_auth)])
+def learn_check(card_id: int, body: AnswerIn):
+    """Antwort (Karteikarte) bzw. Foto vom Rechenweg (Aufgabe) sofort von Claude prüfen lassen."""
+    try:
+        r = service.check_answer(card_id, answer=body.answer, image=body.image, followup=body.followup,
+                                 expectation=body.expectation)
+    except BudgetError as e:
+        return JSONResponse({"fehler": str(e)}, status_code=402)
+    except ValueError as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+    except anthropic.APIError as e:
+        log.error("Antwortprüfung für Karte %s fehlgeschlagen: %s", card_id, api_error_text(e))
+        return JSONResponse({"fehler": f"Claude ist gerade nicht erreichbar: {api_error_text(e)}"}, status_code=502)
+    # Texte mit Formeln schon hier in HTML umwandeln (KaTeX setzt sie im Browser).
+    r["rueckmeldung_html"] = render_inline(r["rueckmeldung"])
+    r["fehlt_html"] = [render_inline(f) for f in r["fehlt"]]
+    r["fehler_html"] = render_inline(r["fehler"]) if r["fehler"] else ""
+    r["rueckfrage_html"] = render_inline(r["rueckfrage"]) if r["rueckfrage"] else ""
+    r["vorschlag_text"] = cards.GRADES.get(r["vorschlag"]) if r["vorschlag"] else None
+    return r
+
+
 def _safe_back(back: str, fallback: str = "/lernen") -> str:
     return back if back.startswith("/") and not back.startswith("//") else fallback
 

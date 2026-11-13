@@ -1,0 +1,39 @@
+name: Tests & Deployment
+
+# Bei jedem Pull Request laufen die Tests auf GitHub. Nach einem Merge auf main laufen sie
+# noch einmal; nur wenn sie grün sind, deployt der Runner auf dem Pi (scripts/install-runner.sh).
+# update-pi.sh sichert vorher die Datenbank und spielt den vorigen Stand zurück, wenn die
+# App nach dem Update nicht antwortet.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # wie Raspberry Pi OS Bookworm
+          cache: pip
+          cache-dependency-path: server/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, pi]
+    concurrency:
+      group: deploy-vorlesungen
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Web-App auf dem Pi aktualisieren
+        run: bash scripts/update-pi.sh

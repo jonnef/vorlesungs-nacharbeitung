@@ -14,12 +14,40 @@ import time
 def main() -> int:
     from .config import settings
     print(f"Modell: {settings.whisper_model} · Threads: {settings.whisper_threads} · Beam: {settings.whisper_beam}")
+    from importlib.metadata import PackageNotFoundError, version
+    for pkg in ("faster-whisper", "ctranslate2", "av", "numpy", "onnxruntime"):
+        try:
+            print(f"  {pkg} {version(pkg)}")
+        except PackageNotFoundError:
+            print(f"  {pkg} – nicht installiert")
     try:
         import numpy as np
         from faster_whisper import WhisperModel
     except ImportError as e:
         print(f"FEHLER: faster-whisper nicht installiert ({e})")
         return 1
+
+    # Einlesen einer Audiodatei testen (WAV, so wie die App Aufnahmen einliest)
+    import os
+    import tempfile
+    import wave
+
+    from . import speech
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    try:
+        with wave.open(tmp.name, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(44100)
+            w.writeframes(np.zeros(44100 * 2, dtype=np.int16).tobytes())
+        decoded = speech.decode(tmp.name)
+        print(f"Einlesen: ok ({decoded.size / speech.SAMPLE_RATE:.1f} s)")
+    except Exception as e:
+        print(f"FEHLER beim Einlesen: {type(e).__name__}: {e}")
+        return 1
+    finally:
+        os.unlink(tmp.name)
     start = time.monotonic()
     try:
         model = WhisperModel(settings.whisper_model, device="cpu", compute_type="int8",

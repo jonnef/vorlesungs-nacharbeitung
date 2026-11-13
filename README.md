@@ -242,13 +242,16 @@ einem gemeinsamen Stapel:
 - Karten **archivieren** (kommen nicht mehr dran, wiederherstellbar) oder **löschen** (endgültig;
   entstehen auch bei einer neuen Fassung der Notizen nicht wieder) – direkt beim Lernen oder unter
   „Karten verwalten“, wo alle Karten nach Modul, aktiv/archiviert und per Suche aufgelistet sind.
-- **Antworten prüfen lassen** (optional): Bei Karteikarten tippst oder diktierst du deine Antwort
-  und tippst auf „Antwort prüfen“. Claude sagt sofort, ob sie stimmt, was fehlt, und schlägt einen
-  Knopf vor (falsch → Nochmal, teilweise → Schwer, richtig → Gut). Danach kannst du eine
-  **Rückfrage** beantworten, die dein Verständnis hinterfragt. Bei Aufgaben rechnest du auf Papier
-  und schickst ein **Foto vom Rechenweg** – Claude sagt, wo der erste Fehler steckt. Das läuft
-  sofort (ohne Batch-Rabatt) mit Claude Haiku: grob 0,02 Cent pro Prüfung, ein Foto etwas mehr;
-  die Kosten erscheinen unter „Kosten“ und zählen zum Monatsbudget.
+- **Antworten besprechen** (optional): Unter jeder Karteikarte gibt es einen kleinen Chat. Du
+  antwortest in eigenen Worten (getippt oder diktiert – Füllwörter und Versprecher stören nicht, die
+  App zeigt, wie sie dich verstanden hat). Claude vergleicht deine Antwort mit der Musterantwort
+  und schlägt einen Knopf vor (falsch → Nochmal, teilweise → Schwer, richtig → Gut). Danach kannst
+  du widersprechen oder nachhaken; Claude geht darauf ein, passt die Bewertung an, wenn du recht
+  hast, und sagt es, wenn die Musterantwort selbst ungenau ist. Bei Aufgaben rechnest du auf Papier
+  und schickst ein **Foto vom Rechenweg** – Claude sagt, wo der erste Fehler steckt, und du kannst
+  darüber ebenso diskutieren. Das läuft sofort (ohne Batch-Rabatt) mit Claude Haiku: grob
+  0,02–0,05 Cent pro Nachricht, ein Foto etwas mehr; die Kosten erscheinen unter „Kosten“ und
+  zählen zum Monatsbudget. Der Verlauf wird nicht gespeichert.
 - **Diktieren:** über das Mikrofon der Handy-Tastatur geht es immer. Ein eigener Mikrofon-Knopf im
   Antwortfeld erscheint nur, wenn die App über HTTPS geöffnet ist (Browser-Vorgabe) – siehe
   „HTTPS über Tailscale“ unten.

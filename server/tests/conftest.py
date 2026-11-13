@@ -112,13 +112,14 @@ class FakeClient:
         self.created.append(params)
         system = params["system"]
         if "handschriftlichen Rechenweg" in system:
-            data = {"bewertung": "teilweise", "rueckmeldung": "Ansatz stimmt, aber $\\lambda_2$ ist falsch.",
-                    "fehlt": ["Probe"], "fehler": "Zeile 3: Vorzeichenfehler."}
-        elif "Rückfrage gestellt" in system:
-            data = {"bewertung": "richtig", "rueckmeldung": "Genau.", "fehlt": []}
+            data = {"bewertung": "teilweise", "antwort": "Du hast $(2-\\lambda)^2 - 1$ angesetzt, aber $\\lambda_2$ ist falsch.",
+                    "fehlt": ["Probe"], "fehler": "Zeile 3: Vorzeichenfehler.", "musterantwort_hinweis": ""}
+        elif len(params["messages"]) == 1:
+            data = {"bewertung": "falsch", "antwort": "Es fehlt $v \\neq 0$.", "fehlt": ["$v \\neq 0$"],
+                    "verstanden": "Ein Skalar mit Av = λv.", "musterantwort_hinweis": ""}
         else:
-            data = {"bewertung": "falsch", "rueckmeldung": "Es fehlt $v \\neq 0$.", "fehlt": ["$v \\neq 0$"],
-                    "rueckfrage": "Warum muss $v \\neq 0$ sein?", "rueckfrage_erwartung": "Sonst gilt es für jedes λ."}
+            data = {"bewertung": "richtig", "antwort": "Du hast recht, das war gemeint.", "fehlt": [],
+                    "verstanden": "", "musterantwort_hinweis": "Die Musterantwort könnte v ≠ 0 betonen."}
         return SimpleNamespace(
             model=params["model"], stop_reason=self.check_stop_reason,
             content=[SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=json.dumps(data))],

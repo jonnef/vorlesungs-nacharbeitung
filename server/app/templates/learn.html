@@ -49,13 +49,24 @@
   .check-buttons { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-top:8px; }
   .photo-btn { display:inline-block; padding:6px 14px; border-radius:8px; border:1px solid var(--accent); color:var(--accent); cursor:pointer; }
   .check-preview { display:block; max-width:100%; max-height:260px; margin-top:8px; border-radius:6px; border:1px solid var(--line); }
-  .check-result { margin-top:10px; padding:10px 12px; border-radius:8px; border:1px solid var(--line);
-          border-left:4px solid var(--c, var(--muted)); background:color-mix(in srgb, var(--c, var(--muted)) 7%, var(--card)); }
-  .check-result.richtig { --c:var(--ok); } .check-result.teilweise { --c:var(--warn); }
-  .check-result.falsch { --c:var(--err); } .check-result.unleserlich { --c:var(--muted); }
-  .check-result .verdict { font-weight:600; }
-  .check-result p { margin:.3em 0; } .check-result ul { margin:.3em 0; padding-left:1.2em; }
-  .check-followup { margin-top:12px; }
+  .chat { display:flex; flex-direction:column; gap:8px; margin:6px 0; }
+  .chat:empty { display:none; }
+  .msg { max-width:92%; padding:8px 12px; border-radius:12px; line-height:1.5; overflow-wrap:anywhere; }
+  .msg p { margin:.3em 0; } .msg ul { margin:.3em 0; padding-left:1.2em; }
+  .msg.me { align-self:flex-end; background:color-mix(in srgb, var(--accent) 14%, var(--card));
+          border:1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-bottom-right-radius:4px; }
+  .msg.claude { align-self:flex-start; background:var(--bg); border:1px solid var(--line);
+          border-left:4px solid var(--c, var(--muted)); border-bottom-left-radius:4px; }
+  .msg.claude.richtig { --c:var(--ok); } .msg.claude.teilweise { --c:var(--warn); }
+  .msg.claude.falsch { --c:var(--err); } .msg.claude.unleserlich { --c:var(--muted); }
+  .msg .verdict { font-weight:600; color:var(--c, var(--fg)); }
+  .msg .understood { font-size:13px; color:var(--muted); margin-top:4px; border-top:1px dashed var(--line); padding-top:4px; }
+  .msg .hinweis { border-top:1px dashed var(--line); padding-top:4px; }
+  .chat-photo { display:block; max-width:100%; max-height:240px; border-radius:6px; }
+  .chat-input { display:flex; gap:8px; align-items:flex-end; margin-top:6px; }
+  .chat-input textarea { flex:1; }
+  .chat-input[hidden] { display:none; }
+  .check-status { margin:4px 0 0; min-height:1em; }
   .grades button.suggested { outline:3px solid var(--fg); outline-offset:2px; }
   .kbd-hint { font-size:13px; color:var(--muted); text-align:center; margin-top:8px; }
   @media (hover: none) { .kbd-hint { display:none; } }
@@ -97,35 +108,25 @@
   <article class="notes">
     <div class="front">{{ view.front|safe }}</div>
     {% if not demo %}
-    <div class="answer-check" id="check" data-url="{{ request.state.base }}/lernen/{{ card.id }}/antwort-pruefen">
-      {% if card.kind == "karte" %}
-      <label for="check-answer" class="check-label">Deine Antwort <span class="muted">– tippen oder diktieren, dann prüfen lassen (optional)</span></label>
-      <div class="check-input">
-        <textarea id="check-answer" rows="3" placeholder="Erkläre in eigenen Worten …"></textarea>
-        <button type="button" class="secondary mic" id="check-mic" hidden title="Diktieren" aria-label="Diktieren">🎤</button>
-      </div>
-      <div class="check-buttons"><button type="button" id="check-send">Antwort prüfen</button>
-        <span class="muted check-status" id="check-status" aria-live="polite"></span></div>
-      {% else %}
-      <label for="check-photo" class="check-label">Rechenweg prüfen lassen <span class="muted">– auf Papier rechnen, Foto machen (optional)</span></label>
-      <div class="check-buttons">
-        <label class="photo-btn secondary"><input type="file" id="check-photo" accept="image/*" capture="environment" hidden>📷 Foto vom Rechenweg</label>
-        <button type="button" id="check-send" disabled>Rechenweg prüfen</button>
-        <span class="muted check-status" id="check-status" aria-live="polite"></span>
+    <div class="answer-check" id="check" data-url="{{ request.state.base }}/lernen/{{ card.id }}/antwort-pruefen"
+         data-kind="{{ card.kind }}">
+      <p class="check-label">{% if card.kind == "aufgabe" %}Rechenweg besprechen <span class="muted">– auf Papier rechnen,
+        Foto schicken, dann darüber reden (optional)</span>{% else %}Antwort besprechen <span class="muted">– antworte in
+        eigenen Worten, dann diskutiere mit Claude über deine und die Musterantwort (optional)</span>{% endif %}</p>
+      <div class="chat" id="chat" aria-live="polite"></div>
+      {% if card.kind == "aufgabe" %}
+      <div class="check-buttons" id="photo-row">
+        <label class="photo-btn"><input type="file" id="check-photo" accept="image/*" capture="environment" hidden>📷 Foto vom Rechenweg</label>
+        <button type="button" id="photo-send" disabled>Rechenweg prüfen</button>
       </div>
       <img id="check-preview" class="check-preview" alt="Dein Rechenweg" hidden>
       {% endif %}
-      <div id="check-result" class="check-result" hidden></div>
-      <div id="check-followup" class="check-followup" hidden>
-        <p class="check-label"><strong>Rückfrage:</strong> <span id="followup-q"></span></p>
-        <div class="check-input">
-          <textarea id="followup-answer" rows="2" placeholder="Deine Antwort auf die Rückfrage …"></textarea>
-          <button type="button" class="secondary mic" id="followup-mic" hidden title="Diktieren" aria-label="Diktieren">🎤</button>
-        </div>
-        <div class="check-buttons"><button type="button" id="followup-send">Antwort senden</button>
-          <span class="muted check-status" id="followup-status" aria-live="polite"></span></div>
-        <div id="followup-result" class="check-result" hidden></div>
+      <div class="chat-input" id="chat-input"{% if card.kind == "aufgabe" %} hidden{% endif %}>
+        <textarea id="chat-text" rows="2" placeholder="{{ 'Frag nach oder widersprich …' if card.kind == 'aufgabe' else 'Deine Antwort in eigenen Worten …' }}"></textarea>
+        <button type="button" class="secondary mic" id="chat-mic" hidden title="Diktieren" aria-label="Diktieren">🎤</button>
+        <button type="button" id="chat-send">Senden</button>
       </div>
+      <p class="muted check-status" id="check-status"></p>
     </div>
     {% endif %}
     <details class="answer" id="answer">
@@ -217,11 +218,14 @@
     });
   })();
 
-  // Antwort von Claude prüfen lassen (Karteikarte: Text, Aufgabe: Foto vom Rechenweg).
+  // Antwort bzw. Rechenweg mit Claude besprechen. Der Verlauf lebt nur in dieser Seite.
   function setupCheck(answer) {
     var box = document.getElementById("check");
     if (!box) return;
-    var url = box.dataset.url, followupData = null, photo = null;
+    var url = box.dataset.url, isTask = box.dataset.kind === "aufgabe", history = [], photo = null;
+    var chat = document.getElementById("chat"), status = document.getElementById("check-status");
+    var input = document.getElementById("chat-input"), field = document.getElementById("chat-text");
+    var sendBtn = document.getElementById("chat-send");
     var LABELS = {richtig: "Richtig", teilweise: "Teilweise richtig", falsch: "Noch nicht richtig", unleserlich: "Nicht lesbar"};
 
     function math(el) {
@@ -230,35 +234,64 @@
         try { katex.render(m.textContent, m, {displayMode: m.classList.contains("block"), throwOnError: false}); } catch (e) {}
       });
     }
-    function send(payload, status, button, done) {
-      button.disabled = true; status.textContent = "Claude prüft …";
-      fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)})
-        .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
-        .then(function (res) {
-          button.disabled = false;
-          if (!res.ok) { status.textContent = res.j.fehler || "Prüfung fehlgeschlagen."; return; }
-          status.textContent = ""; done(res.j);
-        })
-        .catch(function () { button.disabled = false; status.textContent = "Keine Verbindung zum Server."; });
+    function esc(t) { var d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
+    function bubble(cls, html) {
+      var el = document.createElement("div");
+      el.className = "msg " + cls; el.innerHTML = html; chat.appendChild(el); math(el);
+      el.scrollIntoView({block: "nearest", behavior: "smooth"});
+      return el;
     }
-    function show(el, r) {
-      var html = '<div class="verdict">' + (LABELS[r.bewertung] || r.bewertung) + "</div>";
-      if (r.rueckmeldung_html) html += "<p>" + r.rueckmeldung_html + "</p>";
+    function userBubble(text) { return bubble("me", esc(text).replace(/\n/g, "<br>")); }
+    function claudeBubble(r) {
+      var html = '<div class="verdict ' + r.bewertung + '">' + (LABELS[r.bewertung] || r.bewertung) + "</div>" + r.antwort_html;
       if (r.fehler_html) html += "<p><strong>Erster Fehler:</strong> " + r.fehler_html + "</p>";
-      if (r.fehlt_html && r.fehlt_html.length) html += "<ul><li>" + r.fehlt_html.join("</li><li>") + "</li></ul>";
+      if (r.fehlt_html && r.fehlt_html.length) html += '<ul class="fehlt"><li>' + r.fehlt_html.join("</li><li>") + "</li></ul>";
+      if (r.hinweis_html) html += '<p class="hinweis"><strong>Zur Musterantwort:</strong> ' + r.hinweis_html + "</p>";
       if (r.vorschlag_text) html += '<p class="muted">Vorschlag: <strong>' + r.vorschlag_text + "</strong> – entscheiden tust du.</p>";
-      el.className = "check-result " + r.bewertung; el.innerHTML = html; el.hidden = false; math(el);
+      bubble("claude " + r.bewertung, html);
       answer.open = true;
       answer.querySelectorAll(".grades button").forEach(function (b) {
         b.classList.toggle("suggested", String(r.vorschlag) === b.value);
       });
     }
-    function mic(button, field) {
-      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR || !window.isSecureContext || !button) return;  // ohne HTTPS: Diktieren über die Tastatur
-      button.hidden = false;
+    function send(payload, lastUserBubble, done) {
+      sendBtn.disabled = true; status.textContent = "Claude denkt nach …";
+      fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)})
+        .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+        .then(function (res) {
+          sendBtn.disabled = false;
+          if (!res.ok) { status.textContent = res.j.fehler || "Das hat nicht geklappt."; done(false); return; }
+          status.textContent = "";
+          if (lastUserBubble && res.j.verstanden_html) {
+            lastUserBubble.insertAdjacentHTML("beforeend", '<div class="understood">Verstanden als: ' + res.j.verstanden_html + "</div>");
+            math(lastUserBubble);
+          }
+          history.push({role: "assistant", text: res.j.verlauf_text});
+          claudeBubble(res.j);
+          field.placeholder = "Antworte, widersprich oder frag nach …";
+          done(true);
+        })
+        .catch(function () { sendBtn.disabled = false; status.textContent = "Keine Verbindung zum Server."; done(false); });
+    }
+    function sendText() {
+      var text = field.value.trim();
+      if (!text || sendBtn.disabled) return;
+      history.push({role: "user", text: text});
+      var b = userBubble(text);
+      field.value = "";
+      send({messages: history}, b, function (ok) {
+        if (!ok) { history.pop(); b.remove(); field.value = text; }  // zum erneuten Senden zurück ins Feld
+      });
+    }
+    sendBtn.addEventListener("click", sendText);
+    field.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) sendText(); });
+
+    // Diktieren über den Browser (nur über HTTPS); sonst das Mikrofon der Handy-Tastatur.
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition, micBtn = document.getElementById("chat-mic");
+    if (SR && window.isSecureContext && micBtn) {
+      micBtn.hidden = false;
       var rec = null;
-      button.addEventListener("click", function () {
+      micBtn.addEventListener("click", function () {
         if (rec) { rec.stop(); return; }
         rec = new SR(); rec.lang = "de-DE"; rec.interimResults = false; rec.continuous = true;
         var start = field.value ? field.value.replace(/\s*$/, " ") : "";
@@ -266,42 +299,17 @@
           var t = ""; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
           field.value = start + t;
         };
-        rec.onend = function () { rec = null; button.classList.remove("on"); };
+        rec.onend = function () { rec = null; micBtn.classList.remove("on"); };
         rec.onerror = rec.onend;
-        rec.start(); button.classList.add("on");
+        rec.start(); micBtn.classList.add("on");
       });
     }
 
-    var sendBtn = document.getElementById("check-send"), status = document.getElementById("check-status");
-    var result = document.getElementById("check-result"), field = document.getElementById("check-answer");
-    var fu = document.getElementById("check-followup");
-    if (field) {
-      mic(document.getElementById("check-mic"), field);
-      var run = function () {
-        send({answer: field.value}, status, sendBtn, function (r) {
-          show(result, r);
-          if (r.rueckfrage) {
-            followupData = {question: r.rueckfrage, expectation: r.rueckfrage_erwartung};
-            document.getElementById("followup-q").innerHTML = r.rueckfrage_html; math(fu);
-            fu.hidden = false;
-            document.getElementById("followup-result").hidden = true;
-            sendBtn.textContent = "Erneut prüfen";
-          }
-        });
-      };
-      sendBtn.addEventListener("click", run);
-      field.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) run(); });
-      var fField = document.getElementById("followup-answer"), fBtn = document.getElementById("followup-send");
-      mic(document.getElementById("followup-mic"), fField);
-      fBtn.addEventListener("click", function () {
-        send({answer: fField.value, followup: followupData.question, expectation: followupData.expectation},
-             document.getElementById("followup-status"), fBtn,
-             function (r) { show(document.getElementById("followup-result"), r); });
-      });
-    } else {
-      var input = document.getElementById("check-photo"), preview = document.getElementById("check-preview");
-      input.addEventListener("change", function () {
-        var file = input.files && input.files[0];
+    if (isTask) {
+      var photoInput = document.getElementById("check-photo"), preview = document.getElementById("check-preview");
+      var photoSend = document.getElementById("photo-send");
+      photoInput.addEventListener("change", function () {
+        var file = photoInput.files && photoInput.files[0];
         if (!file) return;
         var img = new Image(), reader = new FileReader();
         reader.onload = function () { img.src = reader.result; };
@@ -312,13 +320,19 @@
           c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
           c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
           photo = c.toDataURL("image/jpeg", 0.85);
-          preview.src = photo; preview.hidden = false; sendBtn.disabled = false; status.textContent = "";
+          preview.src = photo; preview.hidden = false; photoSend.disabled = false; status.textContent = "";
         };
         img.onerror = function () { status.textContent = "Das Foto ließ sich nicht öffnen."; };
         reader.readAsDataURL(file);
       });
-      sendBtn.addEventListener("click", function () {
-        if (photo) send({image: photo}, status, sendBtn, function (r) { show(result, r); });
+      photoSend.addEventListener("click", function () {
+        if (!photo || sendBtn.disabled) return;
+        // Neues Foto = neues Gespräch
+        history = [{role: "user", text: {{ photo_placeholder|tojson }}}];
+        chat.innerHTML = "";
+        bubble("me", '<img class="chat-photo" alt="Dein Rechenweg" src="' + photo + '">');
+        preview.hidden = true; photoSend.disabled = true;
+        send({image: photo}, null, function () { photoSend.disabled = false; input.hidden = history.length < 2; });
       });
     }
   }

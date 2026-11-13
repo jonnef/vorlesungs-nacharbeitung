@@ -18,7 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import cards, conceptmap, demo, exam, glossary, hints, ordering, search, slides
+from . import answercheck, cards, conceptmap, demo, exam, glossary, hints, ordering, search, slides
 from .config import settings
 from .db import Database
 from .render import render_inline, render_notes
@@ -35,6 +35,7 @@ templates.env.globals["initial"] = glossary.initial
 templates.env.globals["hint_kinds"] = hints.KINDS
 templates.env.globals["demo"] = settings.demo_mode
 templates.env.globals["demo_login_url"] = settings.demo_login_url
+templates.env.globals["photo_placeholder"] = answercheck.PHOTO_PLACEHOLDER
 
 
 def _worker(stop: threading.Event) -> None:
@@ -516,18 +517,15 @@ def learn_grade(request: Request, card_id: int, grade: int = Form(...), modul: s
 
 
 class AnswerIn(BaseModel):
-    answer: str = ""
+    messages: list[dict] = []
     image: str = ""
-    followup: str = ""
-    expectation: str = ""
 
 
 @app.post("/lernen/{card_id}/antwort-pruefen", dependencies=[Depends(web_auth)])
 def learn_check(card_id: int, body: AnswerIn):
-    """Antwort (Karteikarte) bzw. Foto vom Rechenweg (Aufgabe) sofort von Claude prüfen lassen."""
+    """Antwort bzw. Foto vom Rechenweg sofort mit Claude besprechen (Verlauf kommt vom Browser)."""
     try:
-        r = service.check_answer(card_id, answer=body.answer, image=body.image, followup=body.followup,
-                                 expectation=body.expectation)
+        r = service.check_answer(card_id, history=body.messages, image=body.image)
     except BudgetError as e:
         return JSONResponse({"fehler": str(e)}, status_code=402)
     except ValueError as e:
@@ -536,10 +534,11 @@ def learn_check(card_id: int, body: AnswerIn):
         log.error("Antwortprüfung für Karte %s fehlgeschlagen: %s", card_id, api_error_text(e))
         return JSONResponse({"fehler": f"Claude ist gerade nicht erreichbar: {api_error_text(e)}"}, status_code=502)
     # Texte mit Formeln schon hier in HTML umwandeln (KaTeX setzt sie im Browser).
-    r["rueckmeldung_html"] = render_inline(r["rueckmeldung"])
+    r["antwort_html"] = render_notes(r["antwort"])
     r["fehlt_html"] = [render_inline(f) for f in r["fehlt"]]
     r["fehler_html"] = render_inline(r["fehler"]) if r["fehler"] else ""
-    r["rueckfrage_html"] = render_inline(r["rueckfrage"]) if r["rueckfrage"] else ""
+    r["verstanden_html"] = render_inline(r["verstanden"]) if r["verstanden"] else ""
+    r["hinweis_html"] = render_inline(r["musterantwort_hinweis"]) if r["musterantwort_hinweis"] else ""
     r["vorschlag_text"] = cards.GRADES.get(r["vorschlag"]) if r["vorschlag"] else None
     return r
 

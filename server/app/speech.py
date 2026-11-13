@@ -9,6 +9,7 @@ Versprecher entfernt später Claude beim Besprechen der Antwort.
 import logging
 import re
 import threading
+import time
 
 log = logging.getLogger(__name__)
 
@@ -35,10 +36,11 @@ def _load(name: str, threads: int):
             from faster_whisper import WhisperModel
         except ImportError as e:
             raise SpeechUnavailable("Spracherkennung ist nicht installiert (faster-whisper fehlt).") from e
-        log.info("Lade Whisper-Modell %s …", name)
+        log.info("Lade Whisper-Modell %s (%d Threads) …", name, threads)
+        start = time.monotonic()
         _model = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=threads)
         _model_name = name
-        log.info("Whisper-Modell %s geladen", name)
+        log.info("Whisper-Modell %s geladen in %.1f s", name, time.monotonic() - start)
         return _model
 
 
@@ -67,10 +69,13 @@ def transcribe(path: str, *, model: str, threads: int, beam_size: int, prompt: s
     """Erkennt deutsche Sprache in einer Audiodatei. Rückgabe: Text (leer, wenn nichts gesagt wurde)."""
     whisper = _load(model, threads)
     with _run_lock:
+        start = time.monotonic()
         segments, info = whisper.transcribe(
             path, language="de", beam_size=beam_size, vad_filter=True,
             condition_on_previous_text=False, initial_prompt=prompt or None)
         if info.duration > MAX_SECONDS:
             raise ValueError(f"Die Aufnahme ist zu lang (höchstens {MAX_SECONDS // 60} Minuten).")
         text = " ".join(s.text.strip() for s in segments)
+        log.info("Sprache erkannt: %.1f s Aufnahme (%.1f s mit Sprache) in %.1f s, %d Zeichen",
+                 info.duration, getattr(info, "duration_after_vad", info.duration), time.monotonic() - start, len(text))
     return re.sub(r"\s+", " ", text).strip()

@@ -559,8 +559,8 @@ def speech_transcribe(card_id: int, audio: UploadFile = File(...)):
     suffix = {"audio/mp4": ".m4a", "audio/aac": ".m4a", "audio/ogg": ".ogg", "audio/wav": ".wav"}.get(
         (audio.content_type or "").split(";")[0], ".webm")
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    size = 0
     try:
-        size = 0
         with tmp:
             while chunk := audio.file.read(1 << 20):
                 size += len(chunk)
@@ -574,9 +574,10 @@ def speech_transcribe(card_id: int, audio: UploadFile = File(...)):
         return JSONResponse({"fehler": str(e)}, status_code=503)
     except ValueError as e:
         return JSONResponse({"fehler": str(e)}, status_code=400)
-    except Exception as e:  # kaputte Aufnahme, unbekanntes Format …
-        log.warning("Spracherkennung fehlgeschlagen: %s", e)
-        return JSONResponse({"fehler": "Die Aufnahme ließ sich nicht auswerten."}, status_code=400)
+    except Exception as e:  # kaputte Aufnahme, unbekanntes Format, Modell lässt sich nicht laden …
+        log.exception("Spracherkennung fehlgeschlagen (%s, %d Bytes)", audio.content_type, size)
+        return JSONResponse({"fehler": f"Die Aufnahme ließ sich nicht auswerten ({type(e).__name__}: {e})."[:300]},
+                            status_code=400)
     finally:
         Path(tmp.name).unlink(missing_ok=True)
     return {"text": text}
